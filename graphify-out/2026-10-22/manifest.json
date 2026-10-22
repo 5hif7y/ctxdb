@@ -1,26 +1,38 @@
 {
   "scripts/smoke.py": {
-    "mtime": 1792689546.4150376,
-    "seen": 1792689573.5553303,
-    "ast_hash": "560be60c0e0912c6942f1cee054c174a",
+    "mtime": 1792706916.5519524,
+    "seen": 1792706938.1040761,
+    "ast_hash": "64ca06b1f7d8fad5c25af3a6386886e4",
     "semantic_hash": ""
   },
   "PARITY.md": {
-    "mtime": 1792689561.858926,
-    "seen": 1792689573.555347,
-    "ast_hash": "f865b43b7d8b74275a6dec9156ae2c40",
+    "mtime": 1792706807.0475876,
+    "seen": 1792706938.1041064,
+    "ast_hash": "fff4d887b64218bda5a1c74d445bb518",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1792689561.8578117,
-    "seen": 1792689573.555352,
-    "ast_hash": "e32c3ddcf100848843827e73f7c73fc9",
+    "mtime": 1792706804.285968,
+    "seen": 1792706938.1041105,
+    "ast_hash": "0a10cd8936347337f782dc94bd3d56fa",
     "semantic_hash": ""
   },
   "scripts/tui_smoke.py": {
     "mtime": 1792689546.4240212,
     "seen": 1792689573.5553403,
     "ast_hash": "fd161489bb02bfa3cef09bfdbe7cd5d8",
+    "semantic_hash": ""
+  },
+  "ESTUDIO-SETUP-WATCH.md": {
+    "mtime": 1792706923.072783,
+    "seen": 1792706938.1041012,
+    "ast_hash": "6c9e783f59102a2d64500c4f7e5358a8",
+    "semantic_hash": ""
+  },
+  "RESUMEN-1.md": {
+    "mtime": 1792705271.0150127,
+    "seen": 1792706938.1041145,
+    "ast_hash": "08ac0a4a1d4b01ac1ed40816b9599d1b",
     "semantic_hash": ""
   }
 }
