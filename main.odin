@@ -5,11 +5,13 @@ import "core:fmt"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "core:time"
 
 import "llm"
 import "mcp"
 import "obsidian"
 import "server"
+import "setup"
 import "store"
 import "sync"
 import "tui"
@@ -58,6 +60,8 @@ main :: proc() {
 		run_conflicts(args[2:])
 	case "obsidian-export":
 		run_obsidian_export(args[2:])
+	case "setup":
+		run_setup(args[2:])
 	case "stats":
 		run_stats(args[2:])
 	case "projects":
@@ -109,7 +113,8 @@ Commands:
   export [file.json] [--project NAME|--all]
   import <file.json>
   conflicts list|show|stats|scan [options] [--semantic --runner claude|opencode]
-  obsidian-export --vault DIR [--project NAME|--all] [--limit N] [--since DATE]
+  obsidian-export --vault DIR [--project NAME|--all] [--limit N] [--since DATE] [--watch] [--interval 10m]
+  setup [agent] [--install-skill] [--skill-dir DIR] [--force]
   tui [--project NAME]
   serve [port] [--project NAME]
   sync [--import|--status] [--project NAME|--all] [--dir .engram]
@@ -965,6 +970,8 @@ run_obsidian_export :: proc(args: []string) {
 	since := ""
 	force := false
 	graph_mode := "preserve"
+	watch := false
+	interval_text := ""
 	for i := 0; i < len(args); i += 1 {
 		switch args[i] {
 		case "--vault":
@@ -981,9 +988,27 @@ run_obsidian_export :: proc(args: []string) {
 			force = true
 		case "--graph-config":
 			if i + 1 < len(args) { graph_mode = args[i + 1]; i += 1 }
+		case "--watch":
+			watch = true
+		case "--interval":
+			if i + 1 < len(args) { interval_text = args[i + 1]; i += 1 }
 		}
 	}
 	if vault == "" { fail("obsidian-export requires --vault") }
+	if interval_text != "" && !watch {
+		fail("--interval requires --watch")
+	}
+	interval := time.Duration(10 * time.Minute)
+	if watch && interval_text != "" {
+		parsed, ok := parse_interval(interval_text)
+		if !ok {
+			fail(cat("invalid --interval value: ", interval_text, " (expected e.g. 30s, 5m, 1h)"))
+		}
+		interval = parsed
+	}
+	if watch && interval < time.Minute {
+		fail("--interval must be at least 1m")
+	}
 	s, ok := open_store()
 	if !ok {
 		return
@@ -992,9 +1017,60 @@ run_obsidian_export :: proc(args: []string) {
 	if !all_projects && project_flag == "" {
 		project_flag = resolve_project(s, "")
 	}
+	if watch {
+		cycles, werr := obsidian.Watch(s, obsidian.Watch_Options{
+			vault = vault,
+			project = project_flag,
+			limit = limit,
+			since = since,
+			force = force,
+			graph_mode = graph_mode,
+			interval = interval,
+		})
+		if werr != "" { fail(werr) }
+		fmt.eprintfln("[ctxdb] obsidian watch stopped after %d cycle(s)", cycles)
+		return
+	}
 	result, err := obsidian.Export(s, vault, project_flag, limit, since, force, graph_mode)
 	if err != "" { fail(err) }
 	print_json(result)
+}
+
+run_setup :: proc(args: []string) {
+	if len(args) == 0 {
+		setup.list()
+		return
+	}
+	agent := "generic"
+	install_skill := false
+	skill_parent := ""
+	force := false
+	for i := 0; i < len(args); i += 1 {
+		switch args[i] {
+		case "--install-skill":
+			install_skill = true
+		case "--skill-dir":
+			if i + 1 < len(args) { skill_parent = args[i + 1]; i += 1 }
+		case "--force":
+			force = true
+		case "--print":
+			// print-only is already the default
+		case:
+			if !strings.has_prefix(args[i], "-") {
+				agent = args[i]
+			}
+		}
+	}
+	code, err := setup.run(setup.Run_Options{
+		agent = agent,
+		install_skill = install_skill,
+		skill_parent = skill_parent,
+		force = force,
+	})
+	if err != "" {
+		fmt.wprintln(os.to_writer(os.stderr), err)
+		os.exit(code)
+	}
 }
 
 run_delete :: proc(args: []string) {
@@ -1370,6 +1446,39 @@ parse_float :: proc(text: string, fallback: f64) -> f64 {
 		return fallback
 	}
 	return value
+}
+
+parse_interval :: proc(text: string) -> (time.Duration, bool) {
+	value := strings.trim_space(text)
+	if len(value) < 2 {
+		return 0, false
+	}
+	unit := ""
+	number := ""
+	if strings.has_suffix(value, "ms") {
+		unit = "ms"
+		number = value[:len(value) - 2]
+	} else if strings.has_suffix(value, "s") || strings.has_suffix(value, "m") || strings.has_suffix(value, "h") {
+		unit = value[len(value) - 1:]
+		number = value[:len(value) - 1]
+	} else {
+		return 0, false
+	}
+	n := parse_int(number, -1)
+	if n <= 0 {
+		return 0, false
+	}
+	switch unit {
+	case "ms":
+		return time.Duration(n) * time.Millisecond, true
+	case "s":
+		return time.Duration(n) * time.Second, true
+	case "m":
+		return time.Duration(n) * time.Minute, true
+	case "h":
+		return time.Duration(n) * time.Hour, true
+	}
+	return 0, false
 }
 
 parse_int :: proc(text: string, fallback: int) -> int {

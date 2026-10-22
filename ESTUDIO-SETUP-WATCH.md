@@ -4,7 +4,9 @@ Fecha: 2026-10-22
 Repositorio: `/home/shifty/AI-DEV/engram-port/ctxdb`
 Referencia Go: `/home/shifty/AI-DEV/engram-port/engram`
 
-Este documento es un análisis, no una implementación. No se modificó código.
+> **Estado:** implementado. Se agregaron la skill portable, `ctxdb setup`
+> (print-only + `--install-skill`) y `obsidian-export --watch`. Este documento
+> queda como registro de la decisión y sus fundamentos.
 
 ---
 

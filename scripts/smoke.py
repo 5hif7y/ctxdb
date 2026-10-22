@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import sqlite3
 import socket
 import subprocess
@@ -318,6 +319,69 @@ def main() -> int:
             assert len(list(vault.rglob("*.md"))) > 0
         finally:
             shutil.rmtree(vault, ignore_errors=True)
+
+        # ── Agent setup: print-only snippets + portable skill ───────────────
+        out = run(binary, data_dir, "setup")
+        assert "generic" in out and "claude-code" in out and "print-only" in out, out
+        out = run(binary, data_dir, "setup", "generic")
+        assert '"mcpServers"' in out and "mem_*" in out and "ctxdb setup --install-skill" in out, out
+        out = run(binary, data_dir, "setup", "claude-code")
+        assert "claude mcp add" in out and "--scope user ctxdb" in out, out
+        out = run(binary, data_dir, "setup", "opencode")
+        assert '"mcp"' in out and '"type": "local"' in out, out
+        out = run(binary, data_dir, "setup", "codex")
+        assert "[mcp_servers.ctxdb]" in out, out
+        out = run(binary, data_dir, "setup", "vscode-copilot")
+        assert '"servers"' in out and '"type": "stdio"' in out, out
+
+        skill_parent = Path(tempfile.mkdtemp(prefix="ctxdb-skill-"))
+        try:
+            out = run(binary, data_dir, "setup", "--install-skill", "--skill-dir", str(skill_parent))
+            skill = skill_parent / "ctxdb" / "SKILL.md"
+            assert skill.exists(), out
+            skill_text = skill.read_text()
+            assert "name: ctxdb" in skill_text and "mem_save" in skill_text, skill_text[:200]
+            out = run(binary, data_dir, "setup", "--install-skill", "--skill-dir", str(skill_parent))
+            assert "already installed" in out, out
+            skill.write_text("stale skill\n")
+            out = run(binary, data_dir, "setup", "--install-skill", "--skill-dir", str(skill_parent), "--force")
+            assert "Skill installed" in out, out
+            assert "name: ctxdb" in skill.read_text()
+        finally:
+            shutil.rmtree(skill_parent, ignore_errors=True)
+
+        home = Path(tempfile.mkdtemp(prefix="ctxdb-home-"))
+        try:
+            run(binary, data_dir, "setup", "generic", extra_env={"HOME": str(home)})
+            assert not (home / ".agents").exists(), "setup --print must not install the skill"
+        finally:
+            shutil.rmtree(home, ignore_errors=True)
+
+        # ── Obsidian watch: immediate cycle + graceful SIGINT ───────────────
+        watch_vault = Path(tempfile.mkdtemp(prefix="ctxdb-watch-"))
+        env = dict(os.environ)
+        env["ENGRAM_DATA_DIR"] = str(data_dir)
+        watcher = subprocess.Popen(
+            [str(binary), "obsidian-export", "--vault", str(watch_vault), "--all", "--watch"],
+            cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            state = watch_vault / "engram" / ".engram-sync-state.json"
+            deadline = time.time() + 10
+            while time.time() < deadline and not state.exists() and watcher.poll() is None:
+                time.sleep(0.05)
+            assert state.exists(), "watch did not complete its first export"
+            watcher.send_signal(signal.SIGINT)
+            out, err = watcher.communicate(timeout=10)
+            assert watcher.returncode == 0, (watcher.returncode, out, err)
+            assert "stopped after" in err, err
+            assert len(list(watch_vault.rglob("*.md"))) > 0
+            assert not (watch_vault / "engram" / ".engram-sync-state.json.tmp").exists()
+        finally:
+            if watcher.poll() is None:
+                watcher.kill()
+                watcher.wait()
+            shutil.rmtree(watch_vault, ignore_errors=True)
 
         # ── Delete subcommands ─────────────────────────────────────────────
         run(binary, data_dir, "session", "start", "empty-sess", "--project", "ctxdb")

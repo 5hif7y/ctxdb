@@ -1,4 +1,4 @@
-ctxdb
+/ctxdb
 *.o
 *.obj
 *.out

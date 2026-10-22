@@ -415,8 +415,15 @@ read_state :: proc(path: string) -> (Sync_State, string) {
 write_state :: proc(path: string, state: Sync_State) -> string {
 	data, err := json.marshal(state, json.Marshal_Options{pretty = true, use_spaces = true, spaces = 2})
 	if err != nil { return "cannot encode Obsidian sync state" }
-	if werr := os.write_entire_file_from_string(path, string(data)); werr != nil {
+	defer delete(data)
+	tmp := cat(path, ".tmp")
+	if werr := os.write_entire_file_from_string(tmp, string(data)); werr != nil {
+		_ = os.remove(tmp)
 		return os.error_string(werr)
+	}
+	if rerr := os.rename(tmp, path); rerr != nil {
+		_ = os.remove(tmp)
+		return os.error_string(rerr)
 	}
 	return ""
 }

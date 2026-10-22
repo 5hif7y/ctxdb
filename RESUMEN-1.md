@@ -1,6 +1,11 @@
 # RESUMEN-1 — Port de Engram a Odin (`ctxdb`)
 
 Fecha de este resumen: 2026-10-22
+
+> **Actualización posterior:** se implementaron la skill portable,
+> `ctxdb setup` (print-only + `--install-skill`) y `obsidian-export --watch`.
+> Ver `ESTUDIO-SETUP-WATCH.md` y el commit de esa fase. Las secciones que
+> listan setup/watch como pendientes son históricas.
 Repositorio: `/home/shifty/AI-DEV/engram-port/ctxdb`
 Remoto: `git@github.com:5hif7y/ctxdb.git`
 Rama: `main`

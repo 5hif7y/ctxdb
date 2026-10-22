@@ -18,13 +18,14 @@ the source wins.
 | Relations / judgments | ✅ core | `mem_judge`, `mem_judge_many`, `mem_compare`, conflict list/show/stats, lexical candidate scan |
 | Semantic conflict scan | ✅ | locked prompt, `claude`/`opencode` external runner, dry-run/apply, CLI + HTTP |
 | TUI | ✅ core | dashboard, search, recent, detail, timeline, sessions, session detail; ANSI/termios |
+| Agent skill / setup | ✅ minimal | portable `SKILL.md`, print-only MCP snippets, optional skill install; no per-agent config writes |
 | Consolidation | ✅ core | preview/confirm merge, provenance footer, internal fingerprint |
 | Passive capture | ✅ core | Key Learnings / Aprendizajes numbered and bullet parsing |
 | Session finalization | ✅ | summary observation + ended session + local finalization journal |
 | Export / import | ✅ core | Engram backup shape 0.2.0; stale/duplicate handling |
 | Local git sync | ✅ core | gzipped content-addressed chunks + manifest + synced-chunk tracking; cloud mutations deferred |
 | Compatibility / migrate-copy | ✅ | read-only inspection and `VACUUM INTO` copy migration |
-| Obsidian export | ✅ | incremental state, markdown notes/frontmatter, session/topic hubs, graph.json preserve/force/skip |
+| Obsidian export | ✅ | incremental state, markdown notes/frontmatter, session/topic hubs, graph.json preserve/force/skip, polling `--watch` |
 | HTTP serve API | ✅ subset | local JSON routes for sessions, observations, search, context, prompts, stats, export/import, conflicts, review, passive, consolidate |
 | Project maintenance | ✅ core | merge variants, prune empty projects, delete session/prompt/project |
 | Context | ✅ | sessions, prompts, pinned, recent unpinned observations |
@@ -33,7 +34,7 @@ the source wins.
 | Stats / projects | ✅ | global and per-project counts |
 | Pin / review / delete | ✅ | soft/hard delete, review list and mark-reviewed |
 | CLI | ✅ subset | see README |
-| MCP stdio | ✅ subset | 20 tools, newline JSON-RPC, tool schemas |
+| MCP stdio | ✅ | 27 tools, newline JSON-RPC, tool schemas |
 
 ## Deferred / not yet ported
 
@@ -41,8 +42,7 @@ the source wins.
 |---|---|
 | Cloud sync mutations / delivery | Local chunk sync works, but mutation ledgers, deferred relations, tombstones and cloud acknowledgements are not ported |
 | Cloud transport/autosync | Depends on the cloud backend, Postgres, and auth; out of this phase |
-| Setup/plugin installers | Filesystem/agent-specific installers |
-| Obsidian watcher | One-shot incremental export exists; continuous `--watch` does not |
+| Full per-agent installers | The print-only setup and portable skill cover the agnostic path; plugin/marketplace/npm installers are intentionally not ported |
 | TUI cloud/setup screens | Local memory screens only; cloud/setup UI remains out of scope |
 | `doctor` repair | Read-only doctor only; repair operations deferred |
 | Full legacy migration matrix | Core additive columns only; Go migration branches are not all reproduced |
@@ -66,6 +66,11 @@ the source wins.
   semantic path shells out to an external agent CLI.
 - The Obsidian state file uses string observation IDs (Go uses numeric keys);
   the vault layout and hub names match, but the state file is not interchangeable.
+- `setup` is print-only and skill-oriented, unlike Go's per-agent installers.
+  It never rewrites host configuration files.
+- Obsidian `--watch` is a polling loop (default 10m, minimum 1m). It applies
+  `--force` and graph config only on the first cycle and runs one exporter per
+  vault.
 - The HTTP API implements the local route subset and does not implement cloud
   auth/dashboard routes.
 - Python scripts are auxiliary tests only. They are never invoked by the binary.
