@@ -1,0 +1,7 @@
+ctxdb
+*.o
+*.obj
+*.out
+/tmp/
+core
+core.*
