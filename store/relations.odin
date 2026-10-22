@@ -644,3 +644,119 @@ insert_pending_relation :: proc(s: ^STORE, source_sync, target_sync: string) -> 
 	_, serr := sqlite.step(&stmt)
 	return serr
 }
+
+Candidate_Pair :: struct {
+	source_id:      i64    `json:"source_id"`,
+	source_sync_id: string `json:"source_sync_id"`,
+	source_title:   string `json:"source_title"`,
+	source_type:    string `json:"source_type"`,
+	source_content: string `json:"source_content"`,
+	target_id:      i64    `json:"target_id"`,
+	target_sync_id: string `json:"target_sync_id"`,
+	target_title:   string `json:"target_title"`,
+	target_type:    string `json:"target_type"`,
+	target_content: string `json:"target_content"`
+}
+
+// FindCandidatePairs returns lexical FTS candidate pairs without writing
+// relation rows. It is used by the semantic scan, which asks an external LLM
+// to judge each pair.
+FindCandidatePairs :: proc(s: ^STORE, project_arg: string, inspection_arg, per_source_arg: int) -> ([]Candidate_Pair, string) {
+	project_name, _ := util.NormalizeProject(project_arg)
+	if project_name == "" {
+		return nil, ERR_PROJECT_REQUIRED
+	}
+	inspection_limit := inspection_arg
+	candidates_per_source := per_source_arg
+	if inspection_limit <= 0 { inspection_limit = 100 }
+	if candidates_per_source <= 0 { candidates_per_source = 3 }
+	stmt, err := sqlite.prepare(s.db, `
+		SELECT id, ifnull(sync_id,''), title, type, content
+		FROM observations
+		WHERE LOWER(project) = ? AND deleted_at IS NULL
+		ORDER BY id ASC LIMIT ?`)
+	if err != "" {
+		return nil, err
+	}
+	defer sqlite.finalize(&stmt)
+	_ = sqlite.bind_text(&stmt, 1, project_name)
+	_ = sqlite.bind_int(&stmt, 2, i64(inspection_limit))
+
+	Source :: struct {
+		id:      i64,
+		sync_id: string,
+		title:   string,
+		typ:     string,
+		content: string,
+	}
+	sources := make([dynamic]Source)
+	defer delete(sources)
+	for {
+		has, serr := sqlite.step(&stmt)
+		if serr != "" {
+			return nil, serr
+		}
+		if !has { break }
+		append(&sources, Source{
+			id = sqlite.column_int(&stmt, 0),
+			sync_id = sqlite.column_text(&stmt, 1),
+			title = sqlite.column_text(&stmt, 2),
+			typ = sqlite.column_text(&stmt, 3),
+			content = sqlite.column_text(&stmt, 4),
+		})
+	}
+
+	out := make([dynamic]Candidate_Pair)
+	seen := make(map[string]bool)
+	defer delete(seen)
+	for source in sources {
+		fts_query := util.SanitizeFTS(source.title)
+		if strings.trim_space(fts_query) == "" { continue }
+		cand, cerr := sqlite.prepare(s.db, `
+			SELECT o.id, ifnull(o.sync_id,''), o.title, o.type, o.content
+			FROM observations_fts fts
+			CROSS JOIN observations o ON o.id = fts.rowid
+			WHERE observations_fts MATCH ?
+			  AND o.deleted_at IS NULL
+			  AND LOWER(o.project) = ?
+			  AND o.id != ?
+			ORDER BY bm25(observations_fts) ASC
+			LIMIT ?`)
+		if cerr != "" { continue }
+		_ = sqlite.bind_text(&cand, 1, fts_query)
+		_ = sqlite.bind_text(&cand, 2, project_name)
+		_ = sqlite.bind_int(&cand, 3, source.id)
+		_ = sqlite.bind_int(&cand, 4, i64(candidates_per_source))
+		for {
+			has, serr := sqlite.step(&cand)
+			if serr != "" || !has { break }
+			target_id := sqlite.column_int(&cand, 0)
+			target_sync := sqlite.column_text(&cand, 1)
+			if target_sync == "" { continue }
+			key := pair_key(source.sync_id, target_sync)
+			if seen[key] { continue }
+			seen[key] = true
+			pair: Candidate_Pair
+			pair.source_id = source.id
+			pair.source_sync_id = source.sync_id
+			pair.source_title = source.title
+			pair.source_type = source.typ
+			pair.source_content = source.content
+			pair.target_id = target_id
+			pair.target_sync_id = target_sync
+			pair.target_title = sqlite.column_text(&cand, 2)
+			pair.target_type = sqlite.column_text(&cand, 3)
+			pair.target_content = sqlite.column_text(&cand, 4)
+			append(&out, pair)
+		}
+		sqlite.finalize(&cand)
+	}
+	return exact_slice(out), ""
+}
+
+pair_key :: proc(a, b: string) -> string {
+	if a < b {
+		return cat(a, "|", b)
+	}
+	return cat(b, "|", a)
+}

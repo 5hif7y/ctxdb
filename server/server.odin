@@ -12,6 +12,7 @@ import "core:os"
 import "core:strconv"
 import "core:strings"
 
+import "../llm"
 import "../store"
 
 cat :: proc(parts: ..string) -> string {
@@ -430,12 +431,18 @@ route :: proc(s: ^store.STORE, req: Request, default_project: string) -> Respons
 		return handle_compare(s, req)
 	case path == "/conflicts/scan" && req.method == "POST":
 		body: struct {
-			project:    string `json:"project"`,
-			limit:      int    `json:"limit"`,
-			apply:      bool   `json:"apply"`,
-			max_insert: int    `json:"max_insert"`,
+			project:     string `json:"project"`,
+			limit:       int    `json:"limit"`,
+			apply:       bool   `json:"apply"`,
+			max_insert:  int    `json:"max_insert"`,
+			semantic:    bool   `json:"semantic"`,
+			runner:      string `json:"runner"`,
+			max_semantic: int   `json:"max_semantic"`,
 		}
 		_ = json.unmarshal_string(req.body, &body)
+		if body.semantic {
+			return handle_semantic_scan(s, body.project, body.limit, body.apply, body.runner, body.max_semantic)
+		}
 		result, err := store.ScanProject(s, store.Scan_Options{project = body.project, limit = body.limit, apply = body.apply, max_insert = body.max_insert})
 		if err != "" {
 			return json_error(400, err)
@@ -675,6 +682,68 @@ handle_add_prompt :: proc(s: ^store.STORE, req: Request, default_project: string
 		return json_error(400, err)
 	}
 	return json_created(struct{ id: i64 `json:"id"` }{id = id})
+}
+
+handle_semantic_scan :: proc(s: ^store.STORE, project_name: string, limit: int, apply: bool, runner: string, max_semantic: int) -> Response {
+	pairs, err := store.FindCandidatePairs(s, project_name, limit, 3)
+	if err != "" {
+		return json_error(400, err)
+	}
+	defer delete(pairs)
+	if max_semantic > 0 && len(pairs) > max_semantic {
+		pairs = pairs[:max_semantic]
+	}
+	Semantic_Item :: struct {
+		source_id:  i64    `json:"source_id"`,
+		target_id:  i64    `json:"target_id"`,
+		relation:   string `json:"relation"`,
+		confidence: f64    `json:"confidence"`,
+		reasoning:  string `json:"reasoning"`,
+		model:      string `json:"model"`,
+		applied:    bool   `json:"applied"`,
+		error:      string `json:"error,omitempty"`,
+	}
+	results := make([dynamic]Semantic_Item, 0, len(pairs))
+	defer delete(results)
+	judged := 0
+	for pair in pairs {
+		prompt := llm.BuildPrompt(
+			pair.source_sync_id, pair.source_title, pair.source_content,
+			pair.target_sync_id, pair.target_title, pair.target_content,
+		)
+		verdict, verr := llm.Compare(prompt, runner)
+		item := Semantic_Item{source_id = pair.source_id, target_id = pair.target_id}
+		if verr != "" {
+			item.error = verr
+			append(&results, item)
+			continue
+		}
+		item.relation = verdict.relation
+		item.confidence = verdict.confidence
+		item.reasoning = verdict.reasoning
+		item.model = verdict.model
+		if apply {
+			_, jerr := store.JudgeBySemantic(s, store.Judge_By_Semantic_Params{
+				source_id = pair.source_sync_id, target_id = pair.target_sync_id,
+				relation = verdict.relation, confidence = verdict.confidence,
+				reasoning = verdict.reasoning, model = verdict.model,
+			})
+			if jerr != "" {
+				item.error = jerr
+			} else {
+				item.applied = true
+				judged += 1
+			}
+		}
+		append(&results, item)
+	}
+	return json_ok(struct {
+		project:          string          `json:"project"`,
+		dry_run:          bool            `json:"dry_run"`,
+		candidates_found: int             `json:"candidates_found"`,
+		judged:           int             `json:"judged"`,
+		results:          []Semantic_Item `json:"results"`,
+	}{project = project_name, dry_run = !apply, candidates_found = len(pairs), judged = judged, results = results[:]})
 }
 
 handle_judge :: proc(s: ^store.STORE, req: Request) -> Response {

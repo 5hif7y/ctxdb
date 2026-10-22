@@ -9,6 +9,7 @@ build:
 
 test: build
 	$(PYTHON) scripts/smoke.py --binary ./$(BIN)
+	$(PYTHON) scripts/tui_smoke.py --binary ./$(BIN)
 
 check:
 	$(ODIN) check . -vet

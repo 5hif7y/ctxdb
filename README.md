@@ -31,16 +31,21 @@ Implemented now:
   pin/unpin, soft/hard delete, timeline, context rendering, stats, projects.
 - Relations/conflict judgments: FTS candidate scan, `mem_judge`, `mem_compare`,
   conflict list/show/stats, and project-scoped relation persistence.
+- Semantic conflict scan through an external `claude` or `opencode` CLI
+  (`ENGRAM_AGENT_CLI`), with the locked Engram relation prompt.
+- Interactive terminal UI (`tui`) for dashboard, search, recent observations,
+  detail/timeline, sessions and session detail.
 - Consolidation: preview/confirm merge with provenance footer and fingerprint.
 - Passive capture: Key Learnings / Aprendizajes extraction.
 - Atomic session finalization with a durable local retry journal.
 - Local JSON export/import, git-style gzipped sync chunks with a manifest,
-  and Obsidian markdown export.
+  and incremental Obsidian markdown export with session/topic hubs and graph
+  configuration.
 - Local HTTP JSON API (`serve`) over the same store.
 - CLI: `save`, `search`, `get`, `context`, `timeline`, `stats`, `projects`,
   `delete`, `session`, `prompt`, `export`, `import`, `conflicts`,
   `obsidian-export`, `sync`, `compatibility`, `migrate-copy`, `init`,
-  `doctor`, `serve`, `mcp`.
+  `doctor`, `tui`, `serve`, `mcp`.
 - MCP stdio: `initialize`, `tools/list`, `tools/call`, and 27 memory tools.
 
 Deferred (see PARITY.md): cloud transport/autosync and its Postgres backend,
@@ -100,6 +105,14 @@ export ENGRAM_DATA_DIR="$HOME/.engram"
 ./ctxdb serve 7437
 ```
 
+Semantic scan requires one of the external agent CLIs already installed and
+authenticated. Selection uses `--runner` or `ENGRAM_AGENT_CLI`:
+
+```sh
+ENGRAM_AGENT_CLI=claude ./ctxdb conflicts scan --semantic --project my-project --apply
+ENGRAM_AGENT_CLI=opencode ./ctxdb conflicts scan --semantic --project my-project --apply
+```
+
 MCP stdio (newline-delimited JSON-RPC):
 
 ```sh
@@ -119,8 +132,9 @@ make test
 ```
 
 `scripts/smoke.py` drives the built binary as a black box and asserts CLI,
-MCP, schema, dedupe, topic-revision, search, context, and delete behavior. It
-uses only Python's standard library.
+MCP, HTTP, sync, export/import, semantic scan, consolidation, passive capture,
+finalization, Obsidian and delete behavior. `scripts/tui_smoke.py` drives the
+TUI through a PTY. Both use only Python's standard library.
 
 ## Layout
 
@@ -132,9 +146,12 @@ store/                 SQLite schema, sessions, observations, search, prompts,
 sqlite/                minimal SQLite3 bindings and statement wrapper
 mcp/                   stdio MCP server and tool contract
 server/                local HTTP JSON API over core:net
-obsidian/              markdown vault exporter
+obsidian/              incremental markdown vault exporter + hubs/graph
+llm/                   external agent CLI semantic runner
+tui/                   interactive ANSI terminal UI with termios raw mode
 util/                  normalization, redaction, hashing, truncation
 scripts/smoke.py       auxiliary black-box test (not embedded)
+scripts/tui_smoke.py   auxiliary PTY smoke test (not embedded)
 ```
 
 ## Design notes
@@ -151,6 +168,10 @@ scripts/smoke.py       auxiliary black-box test (not embedded)
 - **HTTP server:** `serve` binds `127.0.0.1` by default and exposes the local
   JSON route subset used by CLI/MCP integrations. It is a local API, not the
   cloud sync transport.
+- **TUI:** ANSI rendering and termios raw mode are implemented directly in
+  Odin. It targets Linux terminals and polls terminal size on each frame.
+- **Semantic LLM:** the runner shells out to `claude` or `opencode`; no model
+  SDK or HTTP/TLS client is embedded. Timeouts are delegated to the agent CLI.
 - **Known limitation:** Unicode NFC normalization for project names is not
   implemented in phase 1 (Odin's standard library does not provide Unicode
   normalization tables). ASCII case folding, trimming, and separator collapsing

@@ -16,7 +16,7 @@
       "file_type": "code",
       "norm_label": "mcp()",
       "source_file": "scripts/smoke.py",
-      "source_location": "L46"
+      "source_location": "L50"
     },
     {
       "id": "scripts_smoke_run",
@@ -28,7 +28,7 @@
       "file_type": "code",
       "norm_label": "run()",
       "source_file": "scripts/smoke.py",
-      "source_location": "L27"
+      "source_location": "L31"
     },
     {
       "id": "scripts_smoke_main",
@@ -40,7 +40,7 @@
       "file_type": "code",
       "norm_label": "main()",
       "source_file": "scripts/smoke.py",
-      "source_location": "L70"
+      "source_location": "L74"
     },
     {
       "id": "scripts_smoke_tool_text",
@@ -52,7 +52,7 @@
       "file_type": "code",
       "norm_label": "tool_text()",
       "source_file": "scripts/smoke.py",
-      "source_location": "L66"
+      "source_location": "L70"
     },
     {
       "id": "readme_build",
@@ -64,7 +64,7 @@
       "node_kind": "heading",
       "norm_label": "build",
       "source_file": "README.md",
-      "source_location": "L56"
+      "source_location": "L65"
     },
     {
       "id": "readme_ctxdb",
@@ -88,7 +88,7 @@
       "node_kind": "heading",
       "norm_label": "design notes",
       "source_file": "README.md",
-      "source_location": "L121"
+      "source_location": "L140"
     },
     {
       "id": "readme_layout",
@@ -100,7 +100,7 @@
       "node_kind": "heading",
       "norm_label": "layout",
       "source_file": "README.md",
-      "source_location": "L109"
+      "source_location": "L125"
     },
     {
       "id": "readme_requirements",
@@ -112,7 +112,7 @@
       "node_kind": "heading",
       "norm_label": "requirements",
       "source_file": "README.md",
-      "source_location": "L41"
+      "source_location": "L50"
     },
     {
       "id": "readme_test",
@@ -124,7 +124,7 @@
       "node_kind": "heading",
       "norm_label": "test",
       "source_file": "README.md",
-      "source_location": "L99"
+      "source_location": "L115"
     },
     {
       "id": "readme_use",
@@ -136,7 +136,7 @@
       "node_kind": "heading",
       "norm_label": "use",
       "source_file": "README.md",
-      "source_location": "L69"
+      "source_location": "L78"
     },
     {
       "id": "path",
@@ -205,7 +205,7 @@
       "node_kind": "heading",
       "norm_label": "deferred / not yet ported",
       "source_file": "PARITY.md",
-      "source_location": "L26"
+      "source_location": "L36"
     },
     {
       "id": "parity_deliberate_differences",
@@ -217,7 +217,7 @@
       "node_kind": "heading",
       "norm_label": "deliberate differences",
       "source_file": "PARITY.md",
-      "source_location": "L45"
+      "source_location": "L51"
     },
     {
       "id": "parity_implemented",
@@ -322,6 +322,28 @@
       "type": "external"
     },
     {
+      "id": "urllib_error",
+      "label": "urllib_error",
+      "community": 2,
+      "community_name": "smoke.py",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "urllib_error",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "urllib_request",
+      "label": "urllib_request",
+      "community": 2,
+      "community_name": "smoke.py",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "urllib_request",
+      "source_file": "",
+      "type": "external"
+    },
+    {
       "id": "argparse",
       "label": "argparse",
       "community": 4,
@@ -344,6 +366,17 @@
       "type": "external"
     },
     {
+      "id": "socket",
+      "label": "socket",
+      "community": 4,
+      "community_name": "main",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "socket",
+      "source_file": "",
+      "type": "external"
+    },
+    {
       "id": "sqlite3",
       "label": "sqlite3",
       "community": 4,
@@ -351,6 +384,17 @@
       "external": true,
       "file_type": "concept",
       "norm_label": "sqlite3",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "time",
+      "label": "time",
+      "community": 4,
+      "community_name": "main",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "time",
       "source_file": "",
       "type": "external"
     }
@@ -365,7 +409,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L104",
+      "source_location": "L108",
       "weight": 1.0
     },
     {
@@ -377,7 +421,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L125",
+      "source_location": "L129",
       "weight": 1.0
     },
     {
@@ -389,7 +433,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L148",
+      "source_location": "L152",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_smoke_main",
+      "target": "json",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "scripts/smoke.py",
+      "source_location": "L223",
       "weight": 1.0
     },
     {
@@ -401,7 +457,43 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L165",
+      "source_location": "L267",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_smoke_main",
+      "target": "socket",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "scripts/smoke.py",
+      "source_location": "L303",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_smoke_main",
+      "target": "subprocess",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "scripts/smoke.py",
+      "source_location": "L309",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_smoke_main",
+      "target": "time",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "scripts/smoke.py",
+      "source_location": "L319",
       "weight": 1.0
     },
     {
@@ -413,7 +505,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L71",
+      "source_location": "L75",
       "weight": 1.0
     },
     {
@@ -425,7 +517,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L79",
+      "source_location": "L83",
       "weight": 1.0
     },
     {
@@ -437,7 +529,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L84",
+      "source_location": "L88",
       "weight": 1.0
     },
     {
@@ -449,7 +541,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L49",
+      "source_location": "L53",
       "weight": 1.0
     },
     {
@@ -461,7 +553,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L50",
+      "source_location": "L54",
       "weight": 1.0
     },
     {
@@ -473,7 +565,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "scripts/smoke.py",
-      "source_location": "L30",
+      "source_location": "L34",
       "weight": 1.0
     },
     {
@@ -538,7 +630,7 @@
     },
     {
       "source": "scripts_smoke",
-      "target": "subprocess",
+      "target": "socket",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -550,7 +642,7 @@
     },
     {
       "source": "scripts_smoke",
-      "target": "sys",
+      "target": "subprocess",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -562,7 +654,7 @@
     },
     {
       "source": "scripts_smoke",
-      "target": "tempfile",
+      "target": "sys",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -574,6 +666,54 @@
     },
     {
       "source": "scripts_smoke",
+      "target": "tempfile",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "scripts/smoke.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_smoke",
+      "target": "time",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "scripts/smoke.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_smoke",
+      "target": "urllib_error",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "scripts/smoke.py",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_smoke",
+      "target": "urllib_request",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "scripts/smoke.py",
+      "source_location": "L25",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_smoke",
       "target": "pathlib",
       "relation": "imports_from",
       "_origin": "ast",
@@ -581,7 +721,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "scripts/smoke.py",
-      "source_location": "L22",
+      "source_location": "L26",
       "weight": 1.0
     },
     {
@@ -593,7 +733,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "scripts/smoke.py",
-      "source_location": "L46",
+      "source_location": "L50",
       "weight": 1.0
     },
     {
@@ -605,7 +745,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "scripts/smoke.py",
-      "source_location": "L27",
+      "source_location": "L31",
       "weight": 1.0
     },
     {
@@ -627,7 +767,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "PARITY.md",
-      "source_location": "L26",
+      "source_location": "L36",
       "weight": 1.0
     },
     {
@@ -638,7 +778,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "PARITY.md",
-      "source_location": "L45",
+      "source_location": "L51",
       "weight": 1.0
     },
     {
@@ -665,13 +805,24 @@
     },
     {
       "source": "readme_ctxdb",
+      "target": "readme_test",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "L115",
+      "weight": 1.0
+    },
+    {
+      "source": "readme_ctxdb",
       "target": "readme_layout",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L109",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
@@ -682,7 +833,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L121",
+      "source_location": "L140",
       "weight": 1.0
     },
     {
@@ -704,7 +855,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L41",
+      "source_location": "L50",
       "weight": 1.0
     },
     {
@@ -715,7 +866,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L56",
+      "source_location": "L65",
       "weight": 1.0
     },
     {
@@ -726,18 +877,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L69",
-      "weight": 1.0
-    },
-    {
-      "source": "readme_ctxdb",
-      "target": "readme_test",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "L99",
+      "source_location": "L78",
       "weight": 1.0
     },
     {
@@ -748,7 +888,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "scripts/smoke.py",
-      "source_location": "L27",
+      "source_location": "L31",
       "weight": 1.0
     },
     {
@@ -759,7 +899,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "scripts/smoke.py",
-      "source_location": "L46",
+      "source_location": "L50",
       "weight": 1.0
     },
     {
@@ -770,7 +910,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "scripts/smoke.py",
-      "source_location": "L66",
+      "source_location": "L70",
       "weight": 1.0
     },
     {
@@ -781,7 +921,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "scripts/smoke.py",
-      "source_location": "L70",
+      "source_location": "L74",
       "weight": 1.0
     },
     {
@@ -815,9 +955,10 @@
       "confidence_score": 0.95,
       "context": "mcp",
       "source_file": "README.md",
-      "source_location": "L33",
+      "source_location": "L43",
       "weight": 1.0
     }
   ],
-  "hyperedges": []
+  "hyperedges": [],
+  "built_at_commit": "b1f06bbe4f8a5ae3964a73f7266e1c2f39615c8a"
 }

@@ -303,3 +303,27 @@ collect_search :: proc(stmt: ^sqlite.STMT) -> ([]SearchResult, string) {
 truncate_for_search :: proc(s: string) -> string {
 	return util.TruncateRunes(s, 300)
 }
+
+AsObservation :: proc(r: SearchResult) -> Observation {
+	o: Observation
+	o.id = r.id
+	o.sync_id = r.sync_id
+	o.session_id = r.session_id
+	o.type = r.type
+	o.title = r.title
+	o.content = r.content
+	o.tool_name = r.tool_name
+	o.project = r.project
+	o.scope = r.scope
+	o.topic_key = r.topic_key
+	o.revision_count = r.revision_count
+	o.duplicate_count = r.duplicate_count
+	o.last_seen_at = r.last_seen_at
+	o.review_after = r.review_after
+	o.pinned = r.pinned
+	o.created_at = r.created_at
+	o.updated_at = r.updated_at
+	o.deleted_at = r.deleted_at
+	o.superseded_by_sync_id = r.superseded_by_sync_id
+	return o
+}

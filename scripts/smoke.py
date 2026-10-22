@@ -28,9 +28,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(binary: Path, data_dir: Path, *args: str, check: bool = True) -> str:
+def run(binary: Path, data_dir: Path, *args: str, check: bool = True, extra_env: dict | None = None) -> str:
     env = dict(os.environ)
     env["ENGRAM_DATA_DIR"] = str(data_dir)
+    if extra_env:
+        env.update(extra_env)
     proc = subprocess.run(
         [str(binary), *args],
         cwd=ROOT,
@@ -250,6 +252,32 @@ def main() -> int:
         shown = json.loads(run(binary, data_dir, "conflicts", "show", rel_id))
         assert shown["judgment_status"] == "judged", shown
         assert json.loads(run(binary, data_dir, "conflicts", "stats", "--project", "ctxdb"))["by_relation"]
+
+        # ── Semantic conflict scan via an external agent CLI ───────────────
+        run(binary, data_dir, "save", "Semantic A", "JWT tokens are stateless", "--type", "decision")
+        run(binary, data_dir, "save", "Semantic B", "JWT tokens need rotation", "--type", "decision")
+        fakebin = Path(tempfile.mkdtemp(prefix="ctxdb-fakebin-"))
+        try:
+            fake_claude = fakebin / "claude"
+            fake_claude.write_text(
+                "#!/bin/sh\n"
+                "cat >/dev/null\n"
+                "printf '%s\\n' '{\"type\":\"result\",\"result\":\"{\\\"Relation\\\":\\\"related\\\",\\\"Confidence\\\":0.9,\\\"Reasoning\\\":\\\"smoke semantic\\\"}\",\"duration_ms\":5,\"modelUsage\":{\"fake-model\":{}}}'\n"
+            )
+            fake_claude.chmod(0o755)
+            semantic = run(
+                binary, data_dir, "conflicts", "scan", "--semantic", "--project", "ctxdb",
+                "--apply", "--limit", "20", "--max-semantic", "5",
+                extra_env={
+                    "ENGRAM_AGENT_CLI": "claude",
+                    "PATH": str(fakebin) + os.pathsep + os.environ.get("PATH", ""),
+                },
+            )
+            parsed = json.loads(semantic)
+            assert parsed["judged"] >= 1, parsed
+            assert any(item["relation"] == "related" for item in parsed["results"]), parsed
+        finally:
+            shutil.rmtree(fakebin, ignore_errors=True)
 
         # ── Export / import ────────────────────────────────────────────────
         export_path = data_dir / "export.json"

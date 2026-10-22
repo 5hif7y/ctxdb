@@ -773,3 +773,33 @@ timeline_entries :: proc(s: ^STORE, session_id: string, focus_id: i64, limit: in
 	}
 	return exact_slice(out), ""
 }
+
+SessionObservations :: proc(s: ^STORE, session_id: string, limit: int) -> ([]Observation, string) {
+	limit_n := limit
+	if limit_n <= 0 {
+		limit_n = 200
+	}
+	sql := cat("SELECT ", OBS_COLUMNS, ` FROM observations o
+		WHERE o.session_id = ? AND o.deleted_at IS NULL
+		ORDER BY o.id ASC LIMIT ?`)
+	stmt, err := sqlite.prepare(s.db, sql)
+	if err != "" {
+		return nil, err
+	}
+	defer sqlite.finalize(&stmt)
+	_ = sqlite.bind_text(&stmt, 1, session_id)
+	_ = sqlite.bind_int(&stmt, 2, i64(limit_n))
+	out := make([dynamic]Observation)
+	for {
+		has, serr := sqlite.step(&stmt)
+		if serr != "" {
+			delete(out)
+			return nil, serr
+		}
+		if !has {
+			break
+		}
+		append(&out, scan_observation(&stmt))
+	}
+	return exact_slice(out), ""
+}

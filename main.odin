@@ -6,11 +6,13 @@ import "core:os"
 import "core:strconv"
 import "core:strings"
 
+import "llm"
 import "mcp"
 import "obsidian"
 import "server"
 import "store"
 import "sync"
+import "tui"
 
 cat :: proc(parts: ..string) -> string {
 	return strings.concatenate(parts)
@@ -34,6 +36,8 @@ main :: proc() {
 		run_mcp(args[2:])
 	case "serve":
 		run_serve(args[2:])
+	case "tui":
+		run_tui(args[2:])
 	case "sync":
 		run_sync(args[2:])
 	case "save":
@@ -104,8 +108,9 @@ Commands:
   prompt search <query> [--project NAME|--all] [--limit N]
   export [file.json] [--project NAME|--all]
   import <file.json>
-  conflicts list|show|stats|scan [options]
+  conflicts list|show|stats|scan [options] [--semantic --runner claude|opencode]
   obsidian-export --vault DIR [--project NAME|--all] [--limit N] [--since DATE]
+  tui [--project NAME]
   serve [port] [--project NAME]
   sync [--import|--status] [--project NAME|--all] [--dir .engram]
   init [name] [--force]
@@ -606,6 +611,23 @@ run_projects :: proc(args: []string) {
 	}
 }
 
+run_tui :: proc(args: []string) {
+	project_flag := ""
+	for i := 0; i < len(args); i += 1 {
+		if args[i] == "--project" && i + 1 < len(args) {
+			project_flag = args[i + 1]
+			i += 1
+		}
+	}
+	s, ok := open_store()
+	if !ok { return }
+	defer store.Close(s)
+	project_name := resolve_project(s, project_flag)
+	if err := tui.Run(s, project_name); err != "" {
+		fail(err)
+	}
+}
+
 run_sync :: proc(args: []string) {
 	dir := ".engram"
 	project_flag := ""
@@ -794,6 +816,9 @@ run_conflicts :: proc(args: []string) {
 		limit := 100
 		apply := false
 		max_insert := 100
+		semantic := false
+		runner := ""
+		max_semantic := 100
 		for i := 1; i < len(args); i += 1 {
 			switch args[i] {
 			case "--project":
@@ -804,9 +829,19 @@ run_conflicts :: proc(args: []string) {
 				apply = true
 			case "--max-insert":
 				if i + 1 < len(args) { max_insert = parse_int(args[i + 1], 100); i += 1 }
+			case "--semantic":
+				semantic = true
+			case "--runner":
+				if i + 1 < len(args) { runner = args[i + 1]; i += 1 }
+			case "--max-semantic":
+				if i + 1 < len(args) { max_semantic = parse_int(args[i + 1], 100); i += 1 }
 			}
 		}
 		if project_flag == "" { project_flag = resolve_project(s, "") }
+		if semantic {
+			run_semantic_scan(s, project_flag, limit, apply, runner, max_semantic)
+			return
+		}
 		result, err := store.ScanProject(s, store.Scan_Options{project = project_flag, limit = limit, apply = apply, max_insert = max_insert})
 		if err != "" { fail(err) }
 		print_json(result)
@@ -853,12 +888,83 @@ run_conflicts :: proc(args: []string) {
 	}
 }
 
+run_semantic_scan :: proc(s: ^store.STORE, project_name: string, limit: int, apply: bool, runner: string, max_semantic: int) {
+	pairs, err := store.FindCandidatePairs(s, project_name, limit, 3)
+	if err != "" { fail(err) }
+	defer delete(pairs)
+	if max_semantic > 0 && len(pairs) > max_semantic {
+		pairs = pairs[:max_semantic]
+	}
+	Semantic_Result :: struct {
+		source_id:   i64    `json:"source_id"`,
+		target_id:   i64    `json:"target_id"`,
+		relation:    string `json:"relation"`,
+		confidence:  f64    `json:"confidence"`,
+		reasoning:   string `json:"reasoning"`,
+		model:       string `json:"model"`,
+		applied:     bool   `json:"applied"`,
+		error:       string `json:"error,omitempty"`,
+	}
+	results := make([dynamic]Semantic_Result, 0, len(pairs))
+	defer delete(results)
+	judged := 0
+	for pair in pairs {
+		prompt := llm.BuildPrompt(
+			pair.source_sync_id, pair.source_title, pair.source_content,
+			pair.target_sync_id, pair.target_title, pair.target_content,
+		)
+		verdict, verr := llm.Compare(prompt, runner)
+		item := Semantic_Result{source_id = pair.source_id, target_id = pair.target_id}
+		if verr != "" {
+			item.error = verr
+			append(&results, item)
+			continue
+		}
+		item.relation = verdict.relation
+		item.confidence = verdict.confidence
+		item.reasoning = verdict.reasoning
+		item.model = verdict.model
+		if apply {
+			_, jerr := store.JudgeBySemantic(s, store.Judge_By_Semantic_Params{
+				source_id = pair.source_sync_id,
+				target_id = pair.target_sync_id,
+				relation = verdict.relation,
+				confidence = verdict.confidence,
+				reasoning = verdict.reasoning,
+				model = verdict.model,
+			})
+			if jerr != "" {
+				item.error = jerr
+			} else {
+				item.applied = true
+				judged += 1
+			}
+		}
+		append(&results, item)
+	}
+	print_json(struct {
+		project:          string            `json:"project"`,
+		dry_run:          bool              `json:"dry_run"`,
+		candidates_found: int               `json:"candidates_found"`,
+		judged:           int               `json:"judged"`,
+		results:          []Semantic_Result `json:"results"`,
+	}{
+		project = project_name,
+		dry_run = !apply,
+		candidates_found = len(pairs),
+		judged = judged,
+		results = results[:],
+	})
+}
+
 run_obsidian_export :: proc(args: []string) {
 	vault := ""
 	project_flag := ""
 	all_projects := false
 	limit := 0
 	since := ""
+	force := false
+	graph_mode := "preserve"
 	for i := 0; i < len(args); i += 1 {
 		switch args[i] {
 		case "--vault":
@@ -871,6 +977,10 @@ run_obsidian_export :: proc(args: []string) {
 			if i + 1 < len(args) { limit = parse_int(args[i + 1], 0); i += 1 }
 		case "--since":
 			if i + 1 < len(args) { since = args[i + 1]; i += 1 }
+		case "--force":
+			force = true
+		case "--graph-config":
+			if i + 1 < len(args) { graph_mode = args[i + 1]; i += 1 }
 		}
 	}
 	if vault == "" { fail("obsidian-export requires --vault") }
@@ -882,7 +992,7 @@ run_obsidian_export :: proc(args: []string) {
 	if !all_projects && project_flag == "" {
 		project_flag = resolve_project(s, "")
 	}
-	result, err := obsidian.Export(s, vault, project_flag, limit, since)
+	result, err := obsidian.Export(s, vault, project_flag, limit, since, force, graph_mode)
 	if err != "" { fail(err) }
 	print_json(result)
 }
