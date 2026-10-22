@@ -29,14 +29,23 @@ Implemented now:
   basename.
 - Sessions, observations, prompts, topic upserts, exact dedupe, review dates,
   pin/unpin, soft/hard delete, timeline, context rendering, stats, projects.
+- Relations/conflict judgments: FTS candidate scan, `mem_judge`, `mem_compare`,
+  conflict list/show/stats, and project-scoped relation persistence.
+- Consolidation: preview/confirm merge with provenance footer and fingerprint.
+- Passive capture: Key Learnings / Aprendizajes extraction.
+- Atomic session finalization with a durable local retry journal.
+- Local JSON export/import, git-style gzipped sync chunks with a manifest,
+  and Obsidian markdown export.
+- Local HTTP JSON API (`serve`) over the same store.
 - CLI: `save`, `search`, `get`, `context`, `timeline`, `stats`, `projects`,
-  `delete`, `session`, `prompt`, `init`, `doctor`, `mcp`.
-- MCP stdio: `initialize`, `tools/list`, `tools/call`, and 20 memory tools
-  including save/search/context/session/prompt/review/pin/timeline/update/delete.
+  `delete`, `session`, `prompt`, `export`, `import`, `conflicts`,
+  `obsidian-export`, `sync`, `compatibility`, `migrate-copy`, `init`,
+  `doctor`, `serve`, `mcp`.
+- MCP stdio: `initialize`, `tools/list`, `tools/call`, and 27 memory tools.
 
-Deferred (see PARITY.md): cloud sync and autosync, HTTP server, TUI, Obsidian
-export, setup installers, relation/conflict scanning, consolidation, passive
-capture, and full replay-ledger parity.
+Deferred (see PARITY.md): cloud transport/autosync and its Postgres backend,
+TUI, agent setup installers, semantic LLM conflict runners, Obsidian
+incremental state/graph layout, and some legacy migration branches.
 
 ## Requirements
 
@@ -82,6 +91,13 @@ export ENGRAM_DATA_DIR="$HOME/.engram"
 ./ctxdb timeline 1
 ./ctxdb stats
 ./ctxdb projects list
+./ctxdb export backup.json --all
+./ctxdb import backup.json
+./ctxdb obsidian-export --vault ~/vault --all
+./ctxdb conflicts scan --project my-project --apply
+./ctxdb sync --all              # write .engram/chunks/*.jsonl.gz + manifest
+./ctxdb sync --status
+./ctxdb serve 7437
 ```
 
 MCP stdio (newline-delimited JSON-RPC):
@@ -111,9 +127,12 @@ uses only Python's standard library.
 ```text
 main.odin              CLI entry point and command dispatch
 project/detect.odin    project identity resolution (Git config read directly)
-store/                 SQLite schema, sessions, observations, search, prompts
+store/                 SQLite schema, sessions, observations, search, prompts,
+                       relations, consolidation, export/import, maintenance
 sqlite/                minimal SQLite3 bindings and statement wrapper
 mcp/                   stdio MCP server and tool contract
+server/                local HTTP JSON API over core:net
+obsidian/              markdown vault exporter
 util/                  normalization, redaction, hashing, truncation
 scripts/smoke.py       auxiliary black-box test (not embedded)
 ```
@@ -129,6 +148,9 @@ scripts/smoke.py       auxiliary black-box test (not embedded)
 - **Replay safety:** `mem_save` accepts an optional `operation_id`; the
   `observation_save_operations` ledger returns an identical replay and rejects
   a changed payload.
+- **HTTP server:** `serve` binds `127.0.0.1` by default and exposes the local
+  JSON route subset used by CLI/MCP integrations. It is a local API, not the
+  cloud sync transport.
 - **Known limitation:** Unicode NFC normalization for project names is not
   implemented in phase 1 (Odin's standard library does not provide Unicode
   normalization tables). ASCII case folding, trimming, and separator collapsing

@@ -113,6 +113,10 @@ Close :: proc(s: ^STORE) {
 	free(s)
 }
 
+SQLiteVersion :: proc() -> string {
+	return sqlite.libversion()
+}
+
 DataDir :: proc(s: ^STORE) -> string {
 	return s.cfg.data_dir
 }

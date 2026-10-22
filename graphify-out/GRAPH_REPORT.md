@@ -1,14 +1,19 @@
 # Graph Report - ctxdb  (2026-10-22)
 
 ## Corpus Check
-- 3 files · ~1,724 words
+- 3 files · ~2,758 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 15 file(s) not represented in the graph (top: .odin 13, (none) 2)
+- Unclassified: 25 file(s) not represented in the graph (top: .odin 23, (none) 2)
 
 ## Summary
-- 30 nodes · 40 edges · 5 communities (3 shown, 2 thin omitted)
+- 34 nodes · 48 edges · 5 communities (3 shown, 2 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.95)
 - Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `b1f06bbe`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - ctxdb
@@ -17,7 +22,7 @@
 - main
 
 ## God Nodes (most connected - your core abstractions)
-1. `main()` - 8 edges
+1. `main()` - 12 edges
 2. `ctxdb` - 8 edges
 3. `mcp()` - 6 edges
 4. `run()` - 4 edges
@@ -56,8 +61,8 @@ Nodes (4): Deferred / not yet ported, Deliberate differences, Implemented, Parit
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `ctxdb` connect `ctxdb` to `mcp`, `Parity with Engram (Go)`?**
-  _High betweenness centrality (0.628) - this node is a cross-community bridge._
+  _High betweenness centrality (0.574) - this node is a cross-community bridge._
 - **Why does `mcp()` connect `mcp` to `smoke.py`, `main`?**
-  _High betweenness centrality (0.538) - this node is a cross-community bridge._
+  _High betweenness centrality (0.521) - this node is a cross-community bridge._
 - **Why does `Status` connect `mcp` to `ctxdb`?**
-  _High betweenness centrality (0.512) - this node is a cross-community bridge._
+  _High betweenness centrality (0.492) - this node is a cross-community bridge._

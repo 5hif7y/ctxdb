@@ -3,10 +3,14 @@ package main
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 
 import "mcp"
+import "obsidian"
+import "server"
 import "store"
+import "sync"
 
 cat :: proc(parts: ..string) -> string {
 	return strings.concatenate(parts)
@@ -28,6 +32,10 @@ main :: proc() {
 		fmt.println(cat("ctxdb ", VERSION))
 	case "mcp":
 		run_mcp(args[2:])
+	case "serve":
+		run_serve(args[2:])
+	case "sync":
+		run_sync(args[2:])
 	case "save":
 		run_save(args[2:])
 	case "search":
@@ -38,6 +46,14 @@ main :: proc() {
 		run_context(args[2:])
 	case "timeline":
 		run_timeline(args[2:])
+	case "export":
+		run_export(args[2:])
+	case "import":
+		run_import(args[2:])
+	case "conflicts":
+		run_conflicts(args[2:])
+	case "obsidian-export":
+		run_obsidian_export(args[2:])
 	case "stats":
 		run_stats(args[2:])
 	case "projects":
@@ -52,6 +68,10 @@ main :: proc() {
 		run_init(args[2:])
 	case "doctor":
 		run_doctor(args[2:])
+	case "compatibility":
+		run_compatibility(args[2:])
+	case "migrate-copy":
+		run_migrate_copy(args[2:])
 	case:
 		fmt.wprintln(os.to_writer(os.stderr), cat("unknown command: ", command))
 		print_usage()
@@ -74,13 +94,24 @@ Commands:
   stats [--project NAME|--all]
   projects list
   delete <id> [--hard]
+  delete session <id>
+  delete prompt <id>
+  delete project <name> [--hard]
   session start <id> [--project NAME] [--directory DIR] [--mode shared|project_owned]
   session end <id> [summary]
   session get <id>
   prompt save <session_id> <content> [--project NAME] [--inbox ID]
   prompt search <query> [--project NAME|--all] [--limit N]
+  export [file.json] [--project NAME|--all]
+  import <file.json>
+  conflicts list|show|stats|scan [options]
+  obsidian-export --vault DIR [--project NAME|--all] [--limit N] [--since DATE]
+  serve [port] [--project NAME]
+  sync [--import|--status] [--project NAME|--all] [--dir .engram]
   init [name] [--force]
   doctor [--json]
+  compatibility [--data-dir DIR] [--json]
+  migrate-copy --data-dir SRC --output-dir DST --confirm-quiescent [--json]
   mcp [--project NAME]
   version
   help
@@ -491,8 +522,70 @@ run_stats :: proc(args: []string) {
 }
 
 run_projects :: proc(args: []string) {
+	if len(args) > 0 && args[0] == "merge" {
+		from := ""
+		to := ""
+		apply := false
+		for i := 1; i < len(args); i += 1 {
+			switch args[i] {
+			case "--from":
+				if i + 1 < len(args) { from = args[i + 1]; i += 1 }
+			case "--to":
+				if i + 1 < len(args) { to = args[i + 1]; i += 1 }
+			case "--apply":
+				apply = true
+			}
+		}
+		if from == "" || to == "" {
+			fail("usage: ctxdb projects merge --from A,B --to CANONICAL [--apply]")
+		}
+		s, ok := open_store()
+		if !ok { return }
+		defer store.Close(s)
+		sources := strings.split(from, ",")
+		defer delete(sources)
+		if !apply {
+			result, err := store.PreviewMergeProjects(s, sources, to)
+			if err != "" { fail(err) }
+			print_json(result)
+			return
+		}
+		result, err := store.MergeProjects(s, sources, to)
+		if err != "" { fail(err) }
+		print_json(result)
+		return
+	}
+	if len(args) > 0 && args[0] == "prune" {
+		dry_run := false
+		for arg in args[1:] {
+			if arg == "--dry-run" { dry_run = true }
+		}
+		s, ok := open_store()
+		if !ok { return }
+		defer store.Close(s)
+		projects, err := store.ListProjectsWithStats(s)
+		if err != "" { fail(err) }
+		defer delete(projects)
+		pruned := 0
+		for p in projects {
+			if p.observation_count == 0 {
+				if dry_run {
+					fmt.println(cat("would prune: ", p.name))
+				} else {
+					_, perr := store.PruneProject(s, p.name)
+					if perr == "" { pruned += 1 }
+				}
+			}
+		}
+		if dry_run {
+			fmt.println("dry run complete")
+		} else {
+			fmt.printf("Pruned %d empty projects\n", pruned)
+		}
+		return
+	}
 	if len(args) > 0 && args[0] != "list" {
-		fail("usage: ctxdb projects list")
+		fail("usage: ctxdb projects list|merge|prune")
 	}
 	s, ok := open_store()
 	if !ok {
@@ -513,7 +606,321 @@ run_projects :: proc(args: []string) {
 	}
 }
 
+run_sync :: proc(args: []string) {
+	dir := ".engram"
+	project_flag := ""
+	all_projects := false
+	mode := "export"
+	for i := 0; i < len(args); i += 1 {
+		switch args[i] {
+		case "--import":
+			mode = "import"
+		case "--status":
+			mode = "status"
+		case "--project":
+			if i + 1 < len(args) { project_flag = args[i + 1]; i += 1 }
+		case "--all":
+			all_projects = true
+		case "--dir":
+			if i + 1 < len(args) { dir = args[i + 1]; i += 1 }
+		}
+	}
+	s, ok := open_store()
+	if !ok { return }
+	defer store.Close(s)
+	switch mode {
+	case "import":
+		result, err := sync.Import(s, dir)
+		if err != "" { fail(err) }
+		print_json(result)
+	case "status":
+		status, err := sync.GetStatus(s, dir)
+		if err != "" { fail(err) }
+		print_json(status)
+	case:
+		if !all_projects && project_flag == "" {
+			project_flag = resolve_project(s, "")
+		}
+		result, err := sync.Export(s, dir, project_flag)
+		if err != "" { fail(err) }
+		print_json(result)
+	}
+}
+
+run_serve :: proc(args: []string) {
+	port := server.DEFAULT_PORT
+	default_project := ""
+	for i := 0; i < len(args); i += 1 {
+		switch args[i] {
+		case "--project":
+			if i + 1 < len(args) {
+				default_project = args[i + 1]
+				i += 1
+			}
+		case:
+			if !strings.has_prefix(args[i], "-") {
+				port = parse_int(args[i], port)
+			}
+		}
+	}
+	if env := os.get_env_alloc("ENGRAM_PORT", context.allocator); strings.trim_space(env) != "" {
+		port = parse_int(strings.trim_space(env), port)
+	}
+	s, ok := open_store()
+	if !ok {
+		return
+	}
+	defer store.Close(s)
+	if err := server.Serve(s, port, default_project); err != "" {
+		fail(err)
+	}
+}
+
+run_export :: proc(args: []string) {
+	out_file := "engram-export.json"
+	project_flag := ""
+	all_projects := false
+	for i := 0; i < len(args); i += 1 {
+		switch args[i] {
+		case "--project":
+			if i + 1 < len(args) {
+				project_flag = args[i + 1]
+				i += 1
+			}
+		case "--all":
+			all_projects = true
+		case:
+			if !strings.has_prefix(args[i], "-") {
+				out_file = args[i]
+			}
+		}
+	}
+	s, ok := open_store()
+	if !ok {
+		return
+	}
+	defer store.Close(s)
+	if !all_projects && project_flag == "" {
+		project_flag = resolve_project(s, "")
+	}
+	data, err := store.Export(s, project_flag)
+	if err != "" {
+		fail(err)
+	}
+	encoded, jerr := store.Marshal_Export(data)
+	if jerr != nil {
+		fail("cannot encode export JSON")
+	}
+	if out_file == "-" {
+		fmt.print(string(encoded))
+		return
+	}
+	if werr := os.write_entire_file_from_string(out_file, string(encoded)); werr != nil {
+		fail(cat("cannot write ", out_file))
+	}
+	fmt.printf("Exported %d sessions, %d observations, %d prompts to %s\n",
+		len(data.sessions), len(data.observations), len(data.prompts), out_file)
+}
+
+run_import :: proc(args: []string) {
+	if len(args) < 1 {
+		fail("usage: ctxdb import <file.json>")
+	}
+	data, rerr := os.read_entire_file_from_path(args[0], context.allocator)
+	if rerr != nil {
+		fail(cat("cannot read ", args[0]))
+	}
+	defer delete(data)
+	export: store.Export_Data
+	if err := json.unmarshal(data, &export); err != nil {
+		fail("invalid export JSON")
+	}
+	s, ok := open_store()
+	if !ok {
+		return
+	}
+	defer store.Close(s)
+	result, err := store.Import(s, export)
+	if err != "" {
+		fail(err)
+	}
+	print_json(result)
+}
+
+run_conflicts :: proc(args: []string) {
+	if len(args) < 1 {
+		fail("usage: ctxdb conflicts list|show|stats|scan|judge|compare")
+	}
+	action := args[0]
+	s, ok := open_store()
+	if !ok {
+		return
+	}
+	defer store.Close(s)
+	switch action {
+	case "list":
+		project_flag := ""
+		status := ""
+		limit := 0
+		for i := 1; i < len(args); i += 1 {
+			switch args[i] {
+			case "--project":
+				if i + 1 < len(args) { project_flag = args[i + 1]; i += 1 }
+			case "--status":
+				if i + 1 < len(args) { status = args[i + 1]; i += 1 }
+			case "--limit":
+				if i + 1 < len(args) { limit = parse_int(args[i + 1], 0); i += 1 }
+			}
+		}
+		items, err := store.ListRelations(s, project_flag, status, limit)
+		if err != "" { fail(err) }
+		defer delete(items)
+		print_json(items)
+	case "show":
+		if len(args) < 2 { fail("usage: ctxdb conflicts show <relation_sync_id>") }
+		rel, err := store.GetRelation(s, args[1])
+		if err != "" { fail(err) }
+		print_json(rel)
+	case "stats":
+		project_flag := ""
+		for i := 1; i < len(args); i += 1 {
+			if args[i] == "--project" && i + 1 < len(args) { project_flag = args[i + 1]; i += 1 }
+		}
+		stats, err := store.RelationStats(s, project_flag)
+		if err != "" { fail(err) }
+		print_json(stats)
+	case "scan":
+		project_flag := ""
+		limit := 100
+		apply := false
+		max_insert := 100
+		for i := 1; i < len(args); i += 1 {
+			switch args[i] {
+			case "--project":
+				if i + 1 < len(args) { project_flag = args[i + 1]; i += 1 }
+			case "--limit":
+				if i + 1 < len(args) { limit = parse_int(args[i + 1], 100); i += 1 }
+			case "--apply":
+				apply = true
+			case "--max-insert":
+				if i + 1 < len(args) { max_insert = parse_int(args[i + 1], 100); i += 1 }
+			}
+		}
+		if project_flag == "" { project_flag = resolve_project(s, "") }
+		result, err := store.ScanProject(s, store.Scan_Options{project = project_flag, limit = limit, apply = apply, max_insert = max_insert})
+		if err != "" { fail(err) }
+		print_json(result)
+	case "judge":
+		if len(args) < 3 { fail("usage: ctxdb conflicts judge <judgment_id> <relation> [--reason TEXT] [--confidence N]") }
+		params := store.Judge_Relation_Params{judgment_id = args[1], relation = args[2], marked_by_actor = "user", marked_by_kind = "human"}
+		for i := 3; i < len(args); i += 1 {
+			switch args[i] {
+			case "--reason":
+				if i + 1 < len(args) { params.reason = args[i + 1]; i += 1 }
+			case "--evidence":
+				if i + 1 < len(args) { params.evidence = args[i + 1]; i += 1 }
+			case "--confidence":
+				if i + 1 < len(args) { params.confidence = parse_float(args[i + 1], 0); params.has_confidence = true; i += 1 }
+			}
+		}
+		rel, err := store.JudgeRelation(s, params)
+		if err != "" { fail(err) }
+		print_json(rel)
+	case "compare":
+		if len(args) < 5 { fail("usage: ctxdb conflicts compare <id_a> <id_b> <relation> <confidence> [--reason TEXT] [--model NAME]") }
+		a, err := store.GetObservation(s, i64(parse_int(args[1], 0)))
+		if err != "" { fail(err) }
+		b, berr := store.GetObservation(s, i64(parse_int(args[2], 0)))
+		if berr != "" { fail(berr) }
+		reason := ""
+		model := ""
+		for i := 5; i < len(args); i += 1 {
+			switch args[i] {
+			case "--reason":
+				if i + 1 < len(args) { reason = args[i + 1]; i += 1 }
+			case "--model":
+				if i + 1 < len(args) { model = args[i + 1]; i += 1 }
+			}
+		}
+		sync_id, jerr := store.JudgeBySemantic(s, store.Judge_By_Semantic_Params{
+			source_id = a.sync_id, target_id = b.sync_id, relation = args[3],
+			confidence = parse_float(args[4], 0), reasoning = reason, model = model,
+		})
+		if jerr != "" { fail(jerr) }
+		print_json(struct{ sync_id: string `json:"sync_id"` }{sync_id = sync_id})
+	case:
+		fail("usage: ctxdb conflicts list|show|stats|scan|judge|compare")
+	}
+}
+
+run_obsidian_export :: proc(args: []string) {
+	vault := ""
+	project_flag := ""
+	all_projects := false
+	limit := 0
+	since := ""
+	for i := 0; i < len(args); i += 1 {
+		switch args[i] {
+		case "--vault":
+			if i + 1 < len(args) { vault = args[i + 1]; i += 1 }
+		case "--project":
+			if i + 1 < len(args) { project_flag = args[i + 1]; i += 1 }
+		case "--all":
+			all_projects = true
+		case "--limit":
+			if i + 1 < len(args) { limit = parse_int(args[i + 1], 0); i += 1 }
+		case "--since":
+			if i + 1 < len(args) { since = args[i + 1]; i += 1 }
+		}
+	}
+	if vault == "" { fail("obsidian-export requires --vault") }
+	s, ok := open_store()
+	if !ok {
+		return
+	}
+	defer store.Close(s)
+	if !all_projects && project_flag == "" {
+		project_flag = resolve_project(s, "")
+	}
+	result, err := obsidian.Export(s, vault, project_flag, limit, since)
+	if err != "" { fail(err) }
+	print_json(result)
+}
+
 run_delete :: proc(args: []string) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "session":
+			if len(args) < 2 { fail("usage: ctxdb delete session <id>") }
+			s, ok := open_store()
+			if !ok { return }
+			defer store.Close(s)
+			if err := store.DeleteSession(s, args[1]); err != "" { fail(err) }
+			fmt.println(cat("Session deleted: ", args[1]))
+			return
+		case "prompt":
+			if len(args) < 2 { fail("usage: ctxdb delete prompt <id>") }
+			s, ok := open_store()
+			if !ok { return }
+			defer store.Close(s)
+			if err := store.DeletePrompt(s, i64(parse_int(args[1], 0))); err != "" { fail(err) }
+			fmt.println(cat("Prompt deleted: ", args[1]))
+			return
+		case "project":
+			if len(args) < 2 { fail("usage: ctxdb delete project <name> [--hard]") }
+			hard := false
+			for arg in args[2:] {
+				if arg == "--hard" { hard = true }
+			}
+			s, ok := open_store()
+			if !ok { return }
+			defer store.Close(s)
+			result, err := store.DeleteProject(s, args[1], hard)
+			if err != "" { fail(err) }
+			print_json(result)
+			return
+		}
+	}
 	id := i64(0)
 	hard := false
 	for arg in args {
@@ -600,8 +1007,23 @@ run_session :: proc(args: []string) {
 			fail(err)
 		}
 		print_json(session)
+	case "finalize":
+		project_flag := ""
+		summary := ""
+		for i := 2; i < len(args); i += 1 {
+			if args[i] == "--project" && i + 1 < len(args) {
+				project_flag = args[i + 1]
+				i += 1
+			} else {
+				summary = cat(summary, args[i])
+			}
+		}
+		project_name := resolve_project(s, project_flag)
+		result, err := store.FinalizeSession(s, store.Finalize_Session_Params{session_id = session_id, project = project_name, summary = summary})
+		if err != "" { fail(err) }
+		print_json(result)
 	case:
-		fail("usage: ctxdb session start|end|get <id>")
+		fail("usage: ctxdb session start|end|get|finalize <id>")
 	}
 }
 
@@ -722,6 +1144,71 @@ run_init :: proc(args: []string) {
 	fmt.println(cat("Initialized ctxdb project: ", name))
 }
 
+run_compatibility :: proc(args: []string) {
+	data_dir := ""
+	as_json := false
+	for i := 0; i < len(args); i += 1 {
+		switch args[i] {
+		case "--data-dir":
+			if i + 1 < len(args) { data_dir = args[i + 1]; i += 1 }
+		case "--json":
+			as_json = true
+		}
+	}
+	if data_dir == "" {
+		cfg, cerr := store.DefaultConfig()
+		if cerr != "" { fail(cerr) }
+		data_dir = cfg.data_dir
+	}
+	report, err := store.Compatibility(data_dir)
+	if err != "" { fail(err) }
+	if as_json {
+		print_json(report)
+		return
+	}
+	fmt.printf("Compatibility: %s\n", report.status)
+	fmt.printf("  Database:     %s\n", report.database)
+	fmt.printf("  Schema OK:    %v\n", report.schema_ok)
+	fmt.printf("  Sessions:     %d\n", report.sessions)
+	fmt.printf("  Observations: %d\n", report.observations)
+	fmt.printf("  Prompts:      %d\n", report.prompts)
+	for issue in report.issues {
+		fmt.printf("  Issue:        %s\n", issue)
+	}
+}
+
+run_migrate_copy :: proc(args: []string) {
+	source := ""
+	destination := ""
+	confirmed := false
+	as_json := false
+	for i := 0; i < len(args); i += 1 {
+		switch args[i] {
+		case "--data-dir":
+			if i + 1 < len(args) { source = args[i + 1]; i += 1 }
+		case "--output-dir":
+			if i + 1 < len(args) { destination = args[i + 1]; i += 1 }
+		case "--confirm-quiescent":
+			confirmed = true
+		case "--json":
+			as_json = true
+		}
+	}
+	if source == "" || destination == "" {
+		fail("usage: ctxdb migrate-copy --data-dir SRC --output-dir DST --confirm-quiescent")
+	}
+	if !confirmed {
+		fail("migrate-copy requires --confirm-quiescent")
+	}
+	message, err := store.CopyDatabase(source, destination)
+	if err != "" { fail(err) }
+	if as_json {
+		print_json(struct{ status: string `json:"status"`, message: string `json:"message"` }{status = "ok", message = message})
+	} else {
+		fmt.println(message)
+	}
+}
+
 run_doctor :: proc(args: []string) {
 	as_json := false
 	for arg in args {
@@ -749,7 +1236,7 @@ run_doctor :: proc(args: []string) {
 		}{
 			status = "ok",
 			version = VERSION,
-			sqlite = "linked",
+			sqlite = store.SQLiteVersion(),
 			database = store.DBPath(s),
 			tables_ok = true,
 			stats = stats,
@@ -766,6 +1253,14 @@ run_doctor :: proc(args: []string) {
 }
 
 // Helpers shared by CLI commands.
+
+parse_float :: proc(text: string, fallback: f64) -> f64 {
+	value, ok := strconv.parse_f64(text)
+	if !ok {
+		return fallback
+	}
+	return value
+}
 
 parse_int :: proc(text: string, fallback: int) -> int {
 	n := 0

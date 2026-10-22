@@ -236,3 +236,14 @@ ObservationFingerprint :: proc(
 	encoded, _ := hex.encode(digest[:])
 	return cat("v1:", string(encoded))
 }
+
+// Sha256Hex8 returns the first eight lowercase hex characters of SHA-256.
+Sha256Hex8 :: proc(data: []byte) -> string {
+	ctx: sha2.Context_256
+	sha2.init_256(&ctx)
+	sha2.update(&ctx, data)
+	digest: [32]u8
+	sha2.final(&ctx, digest[:])
+	encoded, _ := hex.encode(digest[:])
+	return string(encoded[:8])
+}

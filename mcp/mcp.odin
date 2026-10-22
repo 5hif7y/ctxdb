@@ -10,6 +10,7 @@ import "core:bufio"
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 
 import "../project"
@@ -112,6 +113,23 @@ arg_int :: proc(args: json.Object, key: string, fallback: int) -> int {
 		return int(x)
 	case json.String:
 		return store_parse_int(string(x), fallback)
+	}
+	return fallback
+}
+
+arg_float :: proc(args: json.Object, key: string, fallback: f64) -> f64 {
+	v, ok := args[key]
+	if !ok {
+		return fallback
+	}
+	#partial switch x in v {
+	case json.Float:
+		return x
+	case json.Integer:
+		return f64(x)
+	case json.String:
+		value, parsed := strconv.parse_f64(string(x))
+		if parsed { return value }
 	}
 	return fallback
 }
@@ -345,6 +363,75 @@ tool_list :: proc() -> [dynamic]Tool {
 		}, []string{"action"}),
 	})
 	append(&tools, Tool{
+		name = "mem_judge",
+		description = "Record a verdict for a pending memory relation (conflict).",
+		inputSchema = schema(map[string]Property{
+			"judgment_id" = str_prop("Relation sync_id"),
+			"relation" = str_prop("related, compatible, scoped, conflicts_with, supersedes, not_conflict"),
+			"reason" = str_prop("Optional explanation"),
+			"evidence" = str_prop("Optional evidence"),
+			"confidence" = Property{type = "number", description = "0.0..1.0"},
+			"session_id" = str_prop("Session where the judgment was made"),
+		}, []string{"judgment_id", "relation"}),
+	})
+	append(&tools, Tool{
+		name = "mem_judge_many",
+		description = "Record 1..32 independent relation verdicts and return ordered outcomes.",
+		inputSchema = schema(map[string]Property{
+			"judgments" = Property{type = "array", description = "Array of {judgment_id, relation, reason?, evidence?, confidence?}"},
+			"session_id" = str_prop("Session id"),
+		}, []string{"judgments"}),
+	})
+	append(&tools, Tool{
+		name = "mem_compare",
+		description = "Persist a semantic verdict between two observations by integer ID.",
+		inputSchema = schema(map[string]Property{
+			"memory_id_a" = int_prop("First observation ID"),
+			"memory_id_b" = int_prop("Second observation ID"),
+			"relation" = str_prop("Verdict verb"),
+			"reasoning" = str_prop("Short explanation"),
+			"confidence" = Property{type = "number", description = "0.0..1.0"},
+			"model" = str_prop("Model identifier"),
+		}, []string{"memory_id_a", "memory_id_b", "relation", "reasoning", "confidence"}),
+	})
+	append(&tools, Tool{
+		name = "mem_consolidate",
+		description = "Preview or apply an atomic merge of multiple live observations.",
+		inputSchema = schema(map[string]Property{
+			"ids" = Property{type = "array", description = "Observation IDs (at least two)"},
+			"overrides" = Property{type = "object", description = "Optional title/content/type/topic_key"},
+			"confirm" = bool_prop("Apply the merge"),
+			"fingerprint" = str_prop("Fingerprint returned by the preview"),
+		}, []string{"ids"}),
+	})
+	append(&tools, Tool{
+		name = "mem_capture_passive",
+		description = "Extract Key Learnings / Aprendizajes items from text and save them.",
+		inputSchema = schema(map[string]Property{
+			"session_id" = str_prop("Session ID"),
+			"content" = str_prop("Agent output to scan"),
+			"project" = str_prop("Project name"),
+			"source" = str_prop("Source label"),
+		}, []string{"session_id", "content"}),
+	})
+	append(&tools, Tool{
+		name = "mem_session_finalize",
+		description = "Atomically save a session summary observation and end the session.",
+		inputSchema = schema(map[string]Property{
+			"session_id" = str_prop("Session ID"),
+			"project" = str_prop("Project name"),
+			"summary" = str_prop("Structured session summary"),
+		}, []string{"session_id", "summary"}),
+	})
+	append(&tools, Tool{
+		name = "mem_merge_projects",
+		description = "Merge legacy project-name variants into one canonical project.",
+		inputSchema = schema(map[string]Property{
+			"from" = str_prop("Comma-separated source project names"),
+			"to" = str_prop("Canonical project name"),
+		}, []string{"from", "to"}),
+	})
+	append(&tools, Tool{
 		name = "mem_doctor",
 		description = "Read-only operational diagnostics for the local store.",
 		inputSchema = schema(map[string]Property{}),
@@ -541,6 +628,20 @@ handle_tool_call :: proc(s: ^store.STORE, default_project: string, id: json.Valu
 		write_tool_result(id, "Observation unpinned")
 	case "mem_review":
 		handle_review(s, default_project, id, args)
+	case "mem_judge":
+		handle_judge(s, id, args)
+	case "mem_judge_many":
+		handle_judge_many(s, id, args)
+	case "mem_compare":
+		handle_compare(s, id, args)
+	case "mem_consolidate":
+		handle_consolidate(s, id, args)
+	case "mem_capture_passive":
+		handle_capture_passive(s, default_project, id, args)
+	case "mem_session_finalize":
+		handle_session_finalize(s, default_project, id, args)
+	case "mem_merge_projects":
+		handle_merge_projects(s, id, args)
 	case "mem_doctor":
 		handle_doctor(s, id)
 	case:
@@ -846,6 +947,207 @@ handle_review :: proc(s: ^store.STORE, default_project: string, id: json.Value, 
 	case:
 		write_tool_error(id, "action must be list or mark_reviewed")
 	}
+}
+
+Judgment_Outcome :: struct {
+	index:       int    `json:"index"`,
+	judgment_id: string `json:"judgment_id"`,
+	status:      string `json:"status"`,
+	relation:    string `json:"relation,omitempty"`,
+	error:       string `json:"error,omitempty"`,
+}
+
+handle_judge :: proc(s: ^store.STORE, id: json.Value, args: json.Object) {
+	confidence := arg_float(args, "confidence", 0)
+	params := store.Judge_Relation_Params{
+		judgment_id = arg_string(args, "judgment_id"),
+		relation = arg_string(args, "relation"),
+		reason = arg_string(args, "reason"),
+		evidence = arg_string(args, "evidence"),
+		confidence = confidence,
+		has_confidence = arg_present(args, "confidence"),
+		marked_by_actor = "agent",
+		marked_by_kind = "agent",
+		session_id = arg_string(args, "session_id"),
+	}
+	rel, err := store.JudgeRelation(s, params)
+	if err != "" {
+		write_tool_error(id, err)
+		return
+	}
+	text, _ := json_text(struct{ relation: store.Relation `json:"relation"` }{relation = rel})
+	write_tool_result(id, text)
+}
+
+handle_judge_many :: proc(s: ^store.STORE, id: json.Value, args: json.Object) {
+	raw, ok := args["judgments"]
+	if !ok {
+		write_tool_error(id, "judgments is required")
+		return
+	}
+	array, is_array := raw.(json.Array)
+	if !is_array {
+		write_tool_error(id, "judgments must be an array")
+		return
+	}
+	session_id := arg_string(args, "session_id")
+	outcomes := make([dynamic]Judgment_Outcome)
+	defer delete(outcomes)
+	for item, index in array {
+		outcome: Judgment_Outcome
+		outcome.index = index
+		outcome.status = "error"
+		object, is_object := item.(json.Object)
+		if !is_object {
+			outcome.error = "judgment item must be an object"
+			append(&outcomes, outcome)
+			continue
+		}
+		outcome.judgment_id = arg_string(object, "judgment_id")
+		confidence := arg_float(object, "confidence", 0)
+		params := store.Judge_Relation_Params{
+			judgment_id = outcome.judgment_id,
+			relation = arg_string(object, "relation"),
+			reason = arg_string(object, "reason"),
+			evidence = arg_string(object, "evidence"),
+			confidence = confidence,
+			has_confidence = arg_present(object, "confidence"),
+			marked_by_actor = "agent",
+			marked_by_kind = "agent",
+			session_id = session_id,
+		}
+		rel, err := store.JudgeRelation(s, params)
+		if err != "" {
+			outcome.error = err
+		} else {
+			outcome.status = "success"
+			outcome.relation = rel.relation
+		}
+		append(&outcomes, outcome)
+	}
+	text, _ := json_text(struct{ outcomes: []Judgment_Outcome `json:"outcomes"` }{outcomes = outcomes[:]})
+	write_tool_result(id, text)
+}
+
+handle_compare :: proc(s: ^store.STORE, id: json.Value, args: json.Object) {
+	a, aerr := store.GetObservation(s, i64(arg_int(args, "memory_id_a", 0)))
+	if aerr != "" {
+		write_tool_error(id, aerr)
+		return
+	}
+	b, berr := store.GetObservation(s, i64(arg_int(args, "memory_id_b", 0)))
+	if berr != "" {
+		write_tool_error(id, berr)
+		return
+	}
+	sync_id, err := store.JudgeBySemantic(s, store.Judge_By_Semantic_Params{
+		source_id = a.sync_id,
+		target_id = b.sync_id,
+		relation = arg_string(args, "relation"),
+		confidence = arg_float(args, "confidence", 0),
+		reasoning = arg_string(args, "reasoning"),
+		model = arg_string(args, "model"),
+	})
+	if err != "" {
+		write_tool_error(id, err)
+		return
+	}
+	text, _ := json_text(struct{ sync_id: string `json:"sync_id"` }{sync_id = sync_id})
+	write_tool_result(id, text)
+}
+
+handle_consolidate :: proc(s: ^store.STORE, id: json.Value, args: json.Object) {
+	ids: []i64
+	if raw, ok := args["ids"]; ok {
+		if array, is_array := raw.(json.Array); is_array {
+			ids = make([]i64, len(array))
+			for item, i in array {
+				#partial switch value in item {
+				case json.Integer: ids[i] = value
+				case json.Float: ids[i] = i64(value)
+				}
+			}
+		}
+	}
+	defer if ids != nil { delete(ids) }
+	overrides: store.Consolidate_Overrides
+	if raw, ok := args["overrides"]; ok {
+		if object, is_object := raw.(json.Object); is_object {
+			overrides.title = arg_string(object, "title")
+			overrides.content = arg_string(object, "content")
+			overrides.typ = arg_string(object, "type")
+			overrides.topic_key = arg_string(object, "topic_key")
+		}
+	}
+	result, err := store.ConsolidateObservations(s, store.Consolidate_Params{
+		ids = ids,
+		overrides = overrides,
+		confirm = arg_bool(args, "confirm", false),
+		fingerprint = arg_string(args, "fingerprint"),
+	})
+	if err != "" {
+		write_tool_error(id, err)
+		return
+	}
+	text, _ := json_text(result)
+	write_tool_result(id, text)
+}
+
+handle_capture_passive :: proc(s: ^store.STORE, default_project: string, id: json.Value, args: json.Object) {
+	project_name, err := resolve_project_arg(s, default_project, args)
+	if err != "" {
+		write_tool_error(id, err)
+		return
+	}
+	result, perr := store.PassiveCapture(s, store.Passive_Capture_Params{
+		session_id = arg_string(args, "session_id"),
+		content = arg_string(args, "content"),
+		project = project_name,
+		source = arg_string(args, "source"),
+	})
+	if perr != "" {
+		write_tool_error(id, perr)
+		return
+	}
+	text, _ := json_text(result)
+	write_tool_result(id, text)
+}
+
+handle_session_finalize :: proc(s: ^store.STORE, default_project: string, id: json.Value, args: json.Object) {
+	project_name, err := resolve_project_arg(s, default_project, args)
+	if err != "" {
+		write_tool_error(id, err)
+		return
+	}
+	result, ferr := store.FinalizeSession(s, store.Finalize_Session_Params{
+		session_id = arg_string(args, "session_id"),
+		project = project_name,
+		summary = arg_string(args, "summary"),
+	})
+	if ferr != "" {
+		write_tool_error(id, ferr)
+		return
+	}
+	text, _ := json_text(result)
+	write_tool_result(id, text)
+}
+
+handle_merge_projects :: proc(s: ^store.STORE, id: json.Value, args: json.Object) {
+	canonical := arg_string(args, "to")
+	from := arg_string(args, "from")
+	if canonical == "" || from == "" {
+		write_tool_error(id, "both from and to are required")
+		return
+	}
+	sources := strings.split(from, ",")
+	defer delete(sources)
+	result, err := store.MergeProjects(s, sources, canonical)
+	if err != "" {
+		write_tool_error(id, err)
+		return
+	}
+	text, _ := json_text(result)
+	write_tool_result(id, text)
 }
 
 handle_doctor :: proc(s: ^store.STORE, id: json.Value) {

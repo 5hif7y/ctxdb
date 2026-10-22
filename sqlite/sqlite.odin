@@ -21,6 +21,7 @@ SQLITE_OK :: 0
 SQLITE_ROW :: 100
 SQLITE_DONE :: 101
 
+SQLITE_OPEN_READONLY :: 0x00000001
 SQLITE_OPEN_READWRITE :: 0x00000002
 SQLITE_OPEN_CREATE :: 0x00000004
 SQLITE_OPEN_FULLMUTEX :: 0x00010000
@@ -74,7 +75,15 @@ STMT :: struct {
 
 // open opens (or creates) a database. The connection is configured for the
 // single-writer / multi-reader usage pattern of the local store.
+open_readonly :: proc(path: string) -> (DB, string) {
+	return open_flags(path, SQLITE_OPEN_READONLY)
+}
+
 open :: proc(path: string) -> (DB, string) {
+	return open_flags(path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX)
+}
+
+open_flags :: proc(path: string, flags: c.int) -> (DB, string) {
 	db: DB
 	db.path = strings.clone(path)
 	path_buf := make([]byte, len(path) + 1)
@@ -82,7 +91,7 @@ open :: proc(path: string) -> (DB, string) {
 	path_buf[len(path)] = 0
 	defer delete(path_buf)
 
-	rc := sqlite3_open_v2(cstring(raw_data(path_buf)), &db.handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil)
+	rc := sqlite3_open_v2(cstring(raw_data(path_buf)), &db.handle, flags, nil)
 	if rc != SQLITE_OK {
 		msg := db_error_message(db)
 		if db.handle != nil {

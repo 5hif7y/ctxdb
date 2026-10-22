@@ -15,6 +15,16 @@ the source wins.
 | Save observation | ✅ | redaction, truncation, scope, dedupe, topic upsert, review dates, sync id |
 | Replay-safe saves | ✅ v1 ledger | same fingerprint algorithm and conflict/expiry errors |
 | Search | ✅ | topic direct hit, FTS5 trigram, short-term LIKE fallback, bm25 composite rank, filters |
+| Relations / judgments | ✅ core | `mem_judge`, `mem_judge_many`, `mem_compare`, conflict list/show/stats, lexical candidate scan |
+| Consolidation | ✅ core | preview/confirm merge, provenance footer, internal fingerprint |
+| Passive capture | ✅ core | Key Learnings / Aprendizajes numbered and bullet parsing |
+| Session finalization | ✅ | summary observation + ended session + local finalization journal |
+| Export / import | ✅ core | Engram backup shape 0.2.0; stale/duplicate handling |
+| Local git sync | ✅ core | gzipped content-addressed chunks + manifest + synced-chunk tracking; cloud mutations deferred |
+| Compatibility / migrate-copy | ✅ | read-only inspection and `VACUUM INTO` copy migration |
+| Obsidian export | ✅ basic | per-observation markdown notes, sessions, frontmatter |
+| HTTP serve API | ✅ subset | local JSON routes for sessions, observations, search, context, prompts, stats, export/import, conflicts, review, passive, consolidate |
+| Project maintenance | ✅ core | merge variants, prune empty projects, delete session/prompt/project |
 | Context | ✅ | sessions, prompts, pinned, recent unpinned observations |
 | Timeline | ✅ | before/after/session/total |
 | Prompts | ✅ | add, recent, FTS/LIKE search |
@@ -27,16 +37,12 @@ the source wins.
 
 | Area | Why deferred |
 |---|---|
-| Sync chunks / mutations | Requires export/import, chunk codec, manifest/cursors, tombstones — next phase |
-| Cloud transport/autosync | Depends on sync and auth; out of phase 1 |
-| HTTP `serve` API | No HTTP server in Odin core; will be implemented over `core:net` or a thin C binding |
+| Cloud sync mutations / delivery | Local chunk sync works, but mutation ledgers, deferred relations, tombstones and cloud acknowledgements are not ported |
+| Cloud transport/autosync | Depends on the cloud backend, Postgres, and auth; out of this phase |
 | TUI | Bubble Tea equivalent not ported |
-| Obsidian export | Separate exporter |
 | Setup/plugin installers | Filesystem/agent-specific installers |
-| Relations / conflicts | `memory_relations`, judge/compare/scan flows |
-| Consolidation / merge / prune | Curation operations |
-| Passive capture / learnings extraction | Regex-heavy heuristic; port later |
-| Session finalization journal | `session_finalizations` table exists; flow not ported |
+| Full Obsidian incremental state / graph layout | Current exporter writes notes and sessions; no watcher or graph config |
+| Semantic LLM conflict scan | Local scan is lexical/FTS only; no runner/prompt integration |
 | `doctor` repair | Read-only doctor only; repair operations deferred |
 | Full legacy migration matrix | Core additive columns only; Go migration branches are not all reproduced |
 | Unicode NFC project names | No normalization tables in Odin stdlib; a pure-Odin table can be added later |
@@ -50,7 +56,12 @@ the source wins.
   object where the Go server returns a flatter shape. Tool names and argument
   contracts match.
 - `mem_save` does not yet implement automatic prompt capture (`capture_prompt`).
-- `mem_update`/`mem_delete` accept IDs directly in phase 1; the Go implementation
+- `mem_update`/`mem_delete` accept IDs directly; the Go implementation
   additionally requires `expected_project` on public MCP calls. Ownership
-  assertions are a next-phase hardening item.
+  assertions remain a hardening item.
+- Consolidation fingerprints are internally consistent but are not byte-for-byte
+  identical to the Go v2 fingerprint.
+- Conflict scan uses local FTS similarity; it does not call an LLM runner.
+- The HTTP API implements the local route subset and does not implement cloud
+  auth/dashboard routes.
 - Python scripts are auxiliary tests only. They are never invoked by the binary.
