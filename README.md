@@ -36,8 +36,9 @@ Implemented now:
   (`ENGRAM_AGENT_CLI`), with the locked Engram relation prompt.
 - Interactive terminal UI (`tui`) for dashboard, search, recent observations,
   detail/timeline, sessions and session detail.
-- Portable Agent Skills memory protocol and a print-only `setup` command that
-  prints MCP snippets and installs the skill without rewriting agent config.
+- Portable Agent Skills memory protocol and a `setup` command that prints MCP
+  snippets for most hosts and installs the skill; `setup pi` writes Pi's user
+  MCP config and skill.
 - Consolidation: preview/confirm merge with provenance footer and fingerprint.
 - Passive capture: Key Learnings / Aprendizajes extraction.
 - Atomic session finalization with a durable local retry journal.
@@ -125,12 +126,20 @@ Agent setup / skill:
 ./ctxdb setup claude-code             # print the Claude CLI command
 ./ctxdb setup --install-skill         # install ~/.agents/skills/ctxdb/SKILL.md
 ./ctxdb setup opencode --install-skill --skill-dir ~/.config/opencode/skills
+./ctxdb setup pi                      # write Pi's mcp.json + user skill
+./ctxdb setup pi --print              # preview Pi changes without writing
 ```
 
-`ctxdb setup` is deliberately print-only for agent configuration. It does not
-rewrite `~/.claude.json`, `opencode.json`, `config.toml`, or any other host
-config. The portable skill uses logical `mem_*` names and works with any Agent
-Skills client; register `ctxdb` as a separate MCP server.
+`ctxdb setup` is print-only for most agents: it does not rewrite
+`~/.claude.json`, `opencode.json`, `config.toml`, or any other host config. The
+portable skill uses logical `mem_*` names and works with any Agent Skills
+client; register `ctxdb` as a separate MCP server.
+
+Pi is the exception: `ctxdb setup pi` writes
+`<PI_CODING_AGENT_DIR or ~/.pi/agent>/mcp.json` and
+`<agent-dir>/skills/ctxdb/SKILL.md`. It preserves unrelated top-level keys and
+other MCP servers and uses `exposure: "direct"` so the `mem_*` tools are
+available to the memory skill. Restart Pi or run `/reload` after setup.
 
 MCP stdio (newline-delimited JSON-RPC):
 
@@ -169,7 +178,7 @@ server/                local HTTP JSON API over core:net
 obsidian/              incremental markdown vault exporter + hubs/graph/watch
 llm/                   external agent CLI semantic runner
 tui/                   interactive ANSI terminal UI with termios raw mode
-setup/                 print-only MCP snippets + portable skill installer
+setup/                 MCP snippets, portable skill, Pi config installer
 skills/ctxdb/          portable Agent Skills memory protocol
 util/                  normalization, redaction, hashing, truncation
 scripts/smoke.py       auxiliary black-box test (not embedded)
@@ -194,9 +203,10 @@ scripts/tui_smoke.py   auxiliary PTY smoke test (not embedded)
   Odin. It targets Linux terminals and polls terminal size on each frame.
 - **Semantic LLM:** the runner shells out to `claude` or `opencode`; no model
   SDK or HTTP/TLS client is embedded. Timeouts are delegated to the agent CLI.
-- **Agent setup:** print-only by design. The portable skill is the agnostic
-  layer; each host owns its MCP registration. The installer only writes
-  `SKILL.md` when `--install-skill` is requested.
+- **Agent setup:** print-only by design for most hosts. The portable skill is
+  the agnostic layer; each host owns its MCP registration. `setup pi` is the
+  deliberate exception: it writes Pi's user MCP file and skill, preserving
+  unrelated config and using direct MCP exposure.
 - **Obsidian watch:** polling loop with an immediate first cycle, atomic state
   replacement and `SIGINT`/`SIGTERM` shutdown on POSIX. `--force` and graph
   config apply only to the first cycle. Run one exporter per vault; scoped

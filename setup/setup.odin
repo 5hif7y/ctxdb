@@ -44,7 +44,7 @@ AGENTS := []Agent{
 	{slug = "kimi", description = "Kimi Code (mcpServers JSON)", path = "~/.kimi-code/mcp.json", format = .generic_json},
 	{slug = "vscode-copilot", description = "VS Code / Copilot (servers JSON)", path = "<VS Code User>/mcp.json", format = .vscode_json},
 	{slug = "antigravity-cli", description = "Antigravity (mcpServers JSON)", path = "~/.gemini/config/mcp_config.json", format = .generic_json},
-	{slug = "pi", description = "Pi (skill-only is enough; add MCP manually if wanted)", path = "~/.agents/skills/ctxdb/SKILL.md", format = .skill_only},
+	{slug = "pi", description = "Pi (writes agent skill + user mcp.json)", path = "<agent-dir>/mcp.json + <agent-dir>/skills/ctxdb/SKILL.md", format = .skill_only},
 }
 
 Run_Options :: struct {
@@ -52,12 +52,16 @@ Run_Options :: struct {
 	install_skill: bool,
 	skill_parent: string,
 	force:        bool,
+	print_only:   bool,
 }
 
 run :: proc(opts: Run_Options) -> (int, string) {
 	agent := find_agent(opts.agent)
 	if agent == nil {
 		return 1, cat("unknown setup target: ", opts.agent, " (use `ctxdb setup` to list targets)")
+	}
+	if agent.slug == "pi" {
+		return run_pi(opts)
 	}
 	if opts.install_skill {
 		if err := install_skill(opts.skill_parent, opts.force); err != "" {
@@ -143,16 +147,163 @@ print_snippet :: proc(agent: Agent) {
 	fmt.println("remain unambiguous.")
 }
 
-install_skill :: proc(parent: string, force: bool) -> string {
-	home, herr := os.user_home_dir(context.allocator)
-	if herr != nil {
-		return "cannot resolve home directory for skill installation"
+// ─── Pi ─────────────────────────────────────────────────────────────────────
+//
+// Pi is the one exception to print-only setup: it reads a plain JSON MCP file
+// and user skills from <agent-dir>/skills, so ctxdb can install both without
+// shelling out to the Pi CLI or rewriting unrelated host configuration.
+
+run_pi :: proc(opts: Run_Options) -> (int, string) {
+	agent_dir, agent_err := pi_agent_dir()
+	if agent_err != "" {
+		return 1, agent_err
 	}
+	mcp_path, _ := filepath.join({agent_dir, "mcp.json"})
+	skill_parent := opts.skill_parent
+	if strings.trim_space(skill_parent) == "" {
+		skill_parent, _ = filepath.join({agent_dir, "skills"})
+	}
+	skill_path, _ := filepath.join({skill_parent, "ctxdb", "SKILL.md"})
+	bin := executable_path()
+
+	if opts.print_only {
+		print_pi_plan(agent_dir, mcp_path, skill_path, bin)
+		return 0, ""
+	}
+	if skill_err := install_skill_at(skill_parent, opts.force); skill_err != "" {
+		return 1, skill_err
+	}
+	if mcp_err := install_pi_mcp(mcp_path, bin); mcp_err != "" {
+		return 1, mcp_err
+	}
+
+	fmt.println("ctxdb setup: pi")
+	fmt.printf("  agent dir: %s\n", agent_dir)
+	fmt.printf("  MCP:       %s (ctxdb, exposure=direct)\n", mcp_path)
+	fmt.printf("  skill:     %s\n", skill_path)
+	fmt.println("")
+	fmt.println("Next steps:")
+	fmt.println("  - restart Pi, or run /reload in an active session")
+	fmt.println("  - run `pi mcp list` to verify the ctxdb connection")
+	fmt.println("  - use /skill:ctxdb to load the memory protocol explicitly")
+	return 0, ""
+}
+
+print_pi_plan :: proc(agent_dir, mcp_path, skill_path, bin: string) {
+	fmt.println("ctxdb setup pi (dry run)")
+	fmt.printf("  agent dir: %s\n", agent_dir)
+	fmt.printf("  MCP:       %s\n", mcp_path)
+	fmt.printf("  skill:     %s\n", skill_path)
+	fmt.printf("  command:   %s mcp\n", bin)
+	fmt.println("")
+	fmt.println("MCP entry to be written:")
+	fmt.println(cat("{\n  \"mcpServers\": {\n    \"ctxdb\": {\n      \"command\": ", json_quote(bin), ",\n      \"args\": [\"mcp\"],\n      \"description\": \"Persistent project memory: save/search observations, sessions, prompts, conflicts, and context.\",\n      \"exposure\": \"direct\"\n    }\n  }\n}"))
+	fmt.println("")
+	fmt.println("Run without --print to write these files.")
+}
+
+pi_agent_dir :: proc() -> (string, string) {
+	if env := os.get_env("PI_CODING_AGENT_DIR", context.allocator); strings.trim_space(env) != "" {
+		if !filepath.is_abs(env) {
+			return "", "PI_CODING_AGENT_DIR must be absolute"
+		}
+		return env, ""
+	}
+	home, err := os.user_home_dir(context.allocator)
+	if err != nil {
+		return "", "cannot resolve home directory for Pi setup"
+	}
+	dir, _ := filepath.join({home, ".pi", "agent"})
+	return dir, ""
+}
+
+Pi_MCP_Entry :: struct {
+	command:     string   `json:"command"`,
+	args:        []string `json:"args"`,
+	description: string   `json:"description"`,
+	exposure:    string   `json:"exposure"`,
+}
+
+install_pi_mcp :: proc(path, bin: string) -> string {
+	cfg := make(map[string]json.Value)
+	if data, err := os.read_entire_file_from_path(path, context.allocator); err == nil {
+		defer delete(data)
+		if strings.trim_space(string(data)) != "" {
+			if jerr := json.unmarshal(data, &cfg); jerr != nil {
+				return cat("cannot parse Pi MCP config: ", path)
+			}
+		}
+	}
+	if cfg == nil {
+		cfg = make(map[string]json.Value)
+	}
+
+	servers := make(json.Object)
+	if raw, ok := cfg["mcpServers"]; ok {
+		existing, is_object := raw.(json.Object)
+		if !is_object {
+			return "Pi mcpServers must be a JSON object"
+		}
+		servers = existing
+	}
+	entry_data, merr := json.marshal(Pi_MCP_Entry{
+		command = bin,
+		args = []string{"mcp"},
+		description = "Persistent project memory: save/search observations, sessions, prompts, conflicts, and context.",
+		exposure = "direct",
+	})
+	if merr != nil {
+		return "cannot encode Pi MCP entry"
+	}
+	defer delete(entry_data)
+	entry_value: json.Value
+	if uerr := json.unmarshal(entry_data, &entry_value); uerr != nil {
+		return "cannot encode Pi MCP entry"
+	}
+	servers["ctxdb"] = entry_value
+	cfg["mcpServers"] = servers
+
+	data, err := json.marshal(cfg, json.Marshal_Options{pretty = true, use_spaces = true, spaces = 2})
+	if err != nil {
+		return "cannot encode Pi MCP config"
+	}
+	defer delete(data)
+	dir := filepath.dir(path)
+	if _, stat_err := os.stat(dir, context.allocator); stat_err != nil {
+		if mkdir_err := os.make_directory_all(dir); mkdir_err != nil {
+			return cat("cannot create Pi config directory: ", os.error_string(mkdir_err))
+		}
+	}
+	return write_atomic(path, string(data))
+}
+
+write_atomic :: proc(path, content: string) -> string {
+	tmp := cat(path, ".tmp")
+	if werr := os.write_entire_file_from_string(tmp, content); werr != nil {
+		_ = os.remove(tmp)
+		return os.error_string(werr)
+	}
+	if rerr := os.rename(tmp, path); rerr != nil {
+		_ = os.remove(tmp)
+		return os.error_string(rerr)
+	}
+	return ""
+}
+
+install_skill :: proc(parent: string, force: bool) -> string {
 	base := parent
 	if strings.trim_space(base) == "" {
+		home, herr := os.user_home_dir(context.allocator)
+		if herr != nil {
+			return "cannot resolve home directory for skill installation"
+		}
 		base, _ = filepath.join({home, DEFAULT_SKILL_PARENT})
 	}
-	dir, _ := filepath.join({base, SKILL_NAME})
+	return install_skill_at(base, force)
+}
+
+install_skill_at :: proc(parent: string, force: bool) -> string {
+	dir, _ := filepath.join({parent, SKILL_NAME})
 	path, _ := filepath.join({dir, "SKILL.md"})
 	if existing, err := os.read_entire_file_from_path(path, context.allocator); err == nil {
 		defer delete(existing)
@@ -169,14 +320,8 @@ install_skill :: proc(parent: string, force: bool) -> string {
 			return cat("cannot create skill directory: ", os.error_string(err))
 		}
 	}
-	tmp := cat(path, ".tmp")
-	if werr := os.write_entire_file_from_string(tmp, SKILL_MARKDOWN); werr != nil {
-		_ = os.remove(tmp)
-		return cat("cannot write skill: ", os.error_string(werr))
-	}
-	if rerr := os.rename(tmp, path); rerr != nil {
-		_ = os.remove(tmp)
-		return cat("cannot install skill: ", os.error_string(rerr))
+	if err := write_atomic(path, SKILL_MARKDOWN); err != "" {
+		return cat("cannot install skill: ", err)
 	}
 	fmt.printf("Skill installed: %s\n", path)
 	return ""

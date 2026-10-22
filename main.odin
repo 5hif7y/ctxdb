@@ -1045,6 +1045,7 @@ run_setup :: proc(args: []string) {
 	install_skill := false
 	skill_parent := ""
 	force := false
+	print_only := false
 	for i := 0; i < len(args); i += 1 {
 		switch args[i] {
 		case "--install-skill":
@@ -1054,7 +1055,7 @@ run_setup :: proc(args: []string) {
 		case "--force":
 			force = true
 		case "--print":
-			// print-only is already the default
+			print_only = true
 		case:
 			if !strings.has_prefix(args[i], "-") {
 				agent = args[i]
@@ -1066,6 +1067,7 @@ run_setup :: proc(args: []string) {
 		install_skill = install_skill,
 		skill_parent = skill_parent,
 		force = force,
+		print_only = print_only,
 	})
 	if err != "" {
 		fmt.wprintln(os.to_writer(os.stderr), err)

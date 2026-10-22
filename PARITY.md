@@ -18,7 +18,7 @@ the source wins.
 | Relations / judgments | ✅ core | `mem_judge`, `mem_judge_many`, `mem_compare`, conflict list/show/stats, lexical candidate scan |
 | Semantic conflict scan | ✅ | locked prompt, `claude`/`opencode` external runner, dry-run/apply, CLI + HTTP |
 | TUI | ✅ core | dashboard, search, recent, detail, timeline, sessions, session detail; ANSI/termios |
-| Agent skill / setup | ✅ minimal | portable `SKILL.md`, print-only MCP snippets, optional skill install; no per-agent config writes |
+| Agent skill / setup | ✅ minimal | portable `SKILL.md`; print-only MCP snippets for most hosts; `setup pi` writes Pi `mcp.json` + skill (atomic, preserves unrelated config) |
 | Consolidation | ✅ core | preview/confirm merge, provenance footer, internal fingerprint |
 | Passive capture | ✅ core | Key Learnings / Aprendizajes numbered and bullet parsing |
 | Session finalization | ✅ | summary observation + ended session + local finalization journal |
@@ -66,8 +66,9 @@ the source wins.
   semantic path shells out to an external agent CLI.
 - The Obsidian state file uses string observation IDs (Go uses numeric keys);
   the vault layout and hub names match, but the state file is not interchangeable.
-- `setup` is print-only and skill-oriented, unlike Go's per-agent installers.
-  It never rewrites host configuration files.
+- `setup` is print-only and skill-oriented for most hosts, unlike Go's
+  per-agent installers. `setup pi` is the exception: it writes Pi's user
+  `mcp.json` and skill, preserving unrelated configuration.
 - Obsidian `--watch` is a polling loop (default 10m, minimum 1m). It applies
   `--force` and graph config only on the first cycle and runs one exporter per
   vault.

@@ -5,8 +5,9 @@ Repositorio: `/home/shifty/AI-DEV/engram-port/ctxdb`
 Referencia Go: `/home/shifty/AI-DEV/engram-port/engram`
 
 > **Estado:** implementado. Se agregaron la skill portable, `ctxdb setup`
-> (print-only + `--install-skill`) y `obsidian-export --watch`. Este documento
-> queda como registro de la decisión y sus fundamentos.
+> (print-only + `--install-skill`) y `obsidian-export --watch`. Además,
+> `ctxdb setup pi` es la excepción práctica: instala la skill en el agent dir de
+> Pi y registra `ctxdb` en `~/.pi/agent/mcp.json` con exposición directa.
 
 ---
 

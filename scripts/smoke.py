@@ -357,6 +357,42 @@ def main() -> int:
         finally:
             shutil.rmtree(home, ignore_errors=True)
 
+        # Pi setup writes user skill + mcp.json, preserving unrelated config.
+        pi_dir = Path(tempfile.mkdtemp(prefix="ctxdb-pi-"))
+        try:
+            pi_mcp = pi_dir / "mcp.json"
+            pi_mcp.write_text(json.dumps({
+                "autoEnableCodemode": False,
+                "mcpServers": {"other": {"command": "other", "args": []}},
+            }))
+            out = run(binary, data_dir, "setup", "pi", extra_env={"PI_CODING_AGENT_DIR": str(pi_dir)})
+            assert "exposure=direct" in out, out
+            config = json.loads(pi_mcp.read_text())
+            assert config["autoEnableCodemode"] is False
+            assert config["mcpServers"]["other"]["command"] == "other"
+            ctxdb_entry = config["mcpServers"]["ctxdb"]
+            assert Path(ctxdb_entry["command"]).resolve() == binary, ctxdb_entry
+            assert ctxdb_entry["args"] == ["mcp"]
+            assert ctxdb_entry["exposure"] == "direct"
+            skill = pi_dir / "skills" / "ctxdb" / "SKILL.md"
+            assert skill.exists() and "name: ctxdb" in skill.read_text()
+            out = run(binary, data_dir, "setup", "pi", extra_env={"PI_CODING_AGENT_DIR": str(pi_dir)})
+            assert "already installed" in out, out
+        finally:
+            shutil.rmtree(pi_dir, ignore_errors=True)
+
+        pi_print_dir = Path(tempfile.mkdtemp(prefix="ctxdb-pi-print-"))
+        try:
+            out = run(
+                binary, data_dir, "setup", "pi", "--print",
+                extra_env={"PI_CODING_AGENT_DIR": str(pi_print_dir)},
+            )
+            assert "dry run" in out and "exposure" in out, out
+            assert not (pi_print_dir / "mcp.json").exists()
+            assert not (pi_print_dir / "skills").exists()
+        finally:
+            shutil.rmtree(pi_print_dir, ignore_errors=True)
+
         # ── Obsidian watch: immediate cycle + graceful SIGINT ───────────────
         watch_vault = Path(tempfile.mkdtemp(prefix="ctxdb-watch-"))
         env = dict(os.environ)
